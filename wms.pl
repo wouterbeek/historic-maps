@@ -17,10 +17,13 @@
 
 /** <module> WMS Client
 
-'http://maps.nypl.org/warper/maps/wms/7847?request=GetMap&service=WMS&version=1.3.0&bbox=-74.0117,40.7009,-73.9883,40.7176&crs=EPSG:4326&height=250&width=250&layers=image&styles=default'
+The following URI can be used for testing purposes:
+http://metaspatial.net/cgi-bin/ogc-wms.xml
+
+---
 
 @author Wouter Beek
-@version 2018-10-10
+@version 2018-10-11
 */
 
 :- use_module(library(aggregate)).
@@ -662,14 +665,6 @@ known_format(media(image/tiff,_)).
 
 known_version(version(1,1,1)).
 known_version(version(1,3,0)).
-
-
-
-
-
-% TESTS %
-
-example('http://metaspatial.net/cgi-bin/ogc-wms.xml').
 
 
 
