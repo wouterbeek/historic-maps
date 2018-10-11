@@ -2,22 +2,21 @@
   wms,
   [
     get_capabilities/2, % +Uri, -Dict
-    get_map/9,          % +Uri,
-                        % +BBox,
-                        % +CRS,
-                        % +ExceptionFormat,
-                        % +Format,
-                        % +Layers,
-                        % +Size,
-                        % +Styles,
-                        % +Version
-    example/1           % -Uri
+    get_map/9          % +Uri,
+                       % +BBox,
+                       % +CRS,
+                       % +ExceptionFormat,
+                       % +Format,
+                       % +Layers,
+                       % +Size,
+                       % +Styles,
+                       % +Version
   ]
 ).
 
 /** <module> WMS Client
 
-The following URI can be used for testing purposes:
+The following URI can be used for testing:
 http://metaspatial.net/cgi-bin/ogc-wms.xml
 
 ---
@@ -106,25 +105,31 @@ get_map(
   Styles,
   Version
 ) :-
-  atomic_list_concat([XMin,YMin,XMax,YMax], ',', BBoxString),
-  wms_crs_string(Version, CRS, CRSString),
-  atom_phrase(media_type(ExceptionFormat), ExceptionFormatString),
-  atom_phrase(media_type(Format), FormatString),
-  atomic_list_concat(Layers, ',', LayersString),
-  atomic_list_concat(Styles, ',', StylesString),
-  wms_version_term(Version, VersionString),
+  atomic_list_concat([XMin,YMin,XMax,YMax], ',', BBoxAtom),
+  gtrace,
+  wms_crs_term(CRS, CRSAtom),
+  (   Version == version(1,1,1)
+  ->  CRSQuery = srs(CRSAtom)
+  ;   Version == version(1,3,0)
+  ->  CRSQuery = crs(CRSAtom)
+  ),
+  atom_phrase(media_type(ExceptionFormat), ExceptionFormatAtom),
+  atom_phrase(media_type(Format), FormatAtom),
+  atomic_list_concat(Layers, ',', LayersAtom),
+  atomic_list_concat(Styles, ',', StylesAtom),
+  wms_version_term(Version, VersionAtom),
   uri_comps(Uri1, uri(Scheme,Auth,Segments,_,_)),
   Query = [
-    bbox(BBoxString),
-    crs(CRSString),
-    exception(ExceptionFormatString),
-    format(FormatString),
+    bbox(BBoxAtom),
+    CRSQuery,
+    exception(ExceptionFormatAtom),
+    format(FormatAtom),
     height(Height),
-    layers(LayersString),
+    layers(LayersAtom),
     request('GetMap'),
     service('WMS'),
-    styles(StylesString),
-    version(VersionString),
+    styles(StylesAtom),
+    version(VersionAtom),
     width(Width)
   ],
   uri_comps(Uri2, uri(Scheme,Auth,Segments,Query,_)),
