@@ -32,7 +32,10 @@
 :- use_module(library(pprint)).
 :- use_module(library(xpath)).
 
+:- use_module(library(call_ext)).
+:- use_module(library(dcg)).
 :- use_module(library(http/http_client2)).
+:- use_module(library(media_type)).
 :- use_module(library(uri_ext)).
 :- use_module(library(xml_ext)).
 
@@ -47,8 +50,15 @@
 
 get_capabilities(Uri1, Dict) :-
   uri_comps(Uri1, uri(Scheme,Auth,Segments,_,_)),
-  uri_comps(Uri2, uri(Scheme,Auth,Segments,[request('GetCapabilities'),service('WMS')],_)),
-  http_call(Uri2, get_capabilities_stream(Dict), [accept(media(application/'vnd.ogc.wms_xml',[]))]).
+  uri_comps(
+    Uri2,
+    uri(Scheme,Auth,Segments,[request('GetCapabilities'),service('WMS')],_)
+  ),
+  http_call(
+    Uri2,
+    get_capabilities_stream(Dict),
+    [accept(media(application/'vnd.ogc.wms_xml',[charset('UTF-8')]))]
+  ).
 
 get_capabilities_stream(Dict, In) :-
   load_xml(In, [Dom]),
@@ -69,8 +79,8 @@ get_capabilities_stream(Dict, In) :-
 %!   +Uri:atom,
 %!   +BBox:compound,
 %!   +CRS:compound,
-%!   +ExceptionFormat:atom,
-%!   +Format:atom,
+%!   +ExceptionFormat:compound,
+%!   +Format:compound,
 %!   +Layers:list(atom),
 %!   +Size:compound,
 %!   +Styles:list(atom),
@@ -91,19 +101,21 @@ get_map(
   Layers,
   size(Height,Width),
   Styles,
-  version(Major,Minor,Patch)
+  Version
 ) :-
   atomic_list_concat([XMin,YMin,XMax,YMax], ',', BBoxString),
-  crs_string(CRS, CRSString),
+  wms_crs_string(Version, CRS, CRSString),
+  atom_phrase(media_type(ExceptionFormat), ExceptionFormatString),
+  atom_phrase(media_type(Format), FormatString),
   atomic_list_concat(Layers, ',', LayersString),
   atomic_list_concat(Styles, ',', StylesString),
-  atomic_list_concat([Major,Minor,Patch], ., VersionString),
+  wms_version_term(Version, VersionString),
   uri_comps(Uri1, uri(Scheme,Auth,Segments,_,_)),
   Query = [
     bbox(BBoxString),
     crs(CRSString),
-    exception(ExceptionFormat),
-    format(Format),
+    exception(ExceptionFormatString),
+    format(FormatString),
     height(Height),
     layers(LayersString),
     request('GetMap'),
@@ -113,26 +125,20 @@ get_map(
     width(Width)
   ],
   uri_comps(Uri2, uri(Scheme,Auth,Segments,Query,_)),
-  http_download(Uri2, test, [accept(media(application/'vnd.ogc.wms_xml',[]))]).
-
-crs_string(label(Namespace,Code), String) :-
-  format(atom(String), "~a:~a", [Namespace,Code]).
-
-
-
-
-
-% HELPERS %
-
-%! get_dict(+Key:atom, +Dict:dict, -Value, +Default) is det.
-
-get_dict(Key, Dict, Value, _) :-
-  get_dict(Key, Dict, Value), !.
-get_dict(_, _, Default, Default).
+  http_download(
+    Uri2,
+    test,
+    [accept(media(application/'vnd.ogc.wms_xml',[charset('UTF-8')]))]
+  ).
 
 
 
-%! wms_bboxes(+Version:compound, +Dom:compound, +Parent:dict, -BBoxes:list(pair(compound,dict))) is det.
+
+
+% BOUNDING BOXES %
+
+%! wms_bboxes(+Version:compound, +Dom:compound, +Parent:dict,
+%!            -BBoxes:list(pair(compound,dict))) is det.
 
 wms_bboxes(Version, Dom, Parent, Pairs) :-
   get_dict(bboxes, Parent, ParentPairs, []),
@@ -144,7 +150,10 @@ wms_bbox(Version, Dom, CRS-Dict) :-
   % X maximum, X minimum, Y maximum, Y minimum
   xpath_chk(
     Dom,
-    'BoundingBox'(@maxx(number)=XMax,@maxy(number)=YMax,@minx(number)=XMin,@miny(number)=YMin),
+    'BoundingBox'(@maxx(number)=XMax,
+                  @maxy(number)=YMax,
+                  @minx(number)=XMin,
+                  @miny(number)=YMin),
     _
   ),
   % X resolution
@@ -159,13 +168,13 @@ wms_bbox(Version, Dom, CRS-Dict) :-
   dict_pairs(Dict, bbox, Pairs).
 
 wms_bbox_crs(Version, Dom, CRS) :-
-  wms_bbox_crs_string(Version, Dom, String),
-  wms_crs_term(String, CRS).
+  wms_bbox_crs_string(Version, Dom, Atom),
+  wms_crs_term(Atom, CRS).
 
-wms_bbox_crs_string(version(1,1,1), Dom, String) :- !,
-  xpath_chk(Dom, //'BoundingBox'(@'SRS',string), String).
-wms_bbox_crs_string(version(1,3,0), Dom, String) :- !,
-  xpath_chk(Dom, //'BoundingBox'(@'CRS',string), String).
+wms_bbox_crs_string(version(1,1,1), Dom, Atom) :- !,
+  xpath_chk(Dom, //'BoundingBox'(@'SRS',string), Atom).
+wms_bbox_crs_string(version(1,3,0), Dom, Atom) :- !,
+  xpath_chk(Dom, //'BoundingBox'(@'CRS',string), Atom).
 wms_bbox_crs_string(Version, _, _) :-
   domain_error(wms_version, Version).
 
@@ -186,14 +195,88 @@ wms_bboxes_inheritance([CRS1-BBox1|T1], [CRS2-BBox2|T2], [CRS2-BBox2|T3]) :-
 
 
 
-%! wms_capability(+Version:compound, +Dom:compound, -ExceptionFormats:list(atom),
-%!                -Formats:list(atom), -Layers:list(dict)) is det.
+
+
+% CRSES %
+
+%! wms_crses(+Version:compound, +Dom:compound, -CRSes:list(atom)) is det.
+
+wms_crses(Version, Dom, CRSes) :-
+  aggregate_all(set(CRS), wms_crs(Version, Dom, CRS), CRSes).
+
+wms_crs(Version, Dom, CRS) :-
+  wms_crs_string(Version, Dom, Atom),
+  wms_crs_term(Atom, CRS).
+
+wms_crs_string(version(1,1,1), Dom, Atom) :- !,
+  xpath(Dom, //'SRS'(normalize_space), Atom).
+wms_crs_string(version(1,3,0), Dom, Atom) :- !,
+  xpath(Dom, //'CRS'(normalize_space), Atom).
+wms_crs_string(Version, _, _) :-
+  domain_error(wms_version, Version).
+
+wms_crs_term(label(Namespace,Code,Params), Atom2) :-
+  wms_crs_term(label(Namespace,Code), Atom1),
+  known_crs_namespace(Namespace),
+  atomic_list_concat([Atom1,Params], ',', Atom2), !.
+wms_crs_term(label(Namespace,Code), Atom) :-
+  atomic_list_concat([Namespace,Code], :, Atom),
+  known_crs_namespace(Namespace), !.
+wms_crs_term(uri(Atom), Atom).
+
+
+
+
+
+% VERSION %
+
+%! wms_version(+Dom:compound, -Version:compound) is det.
+
+wms_version(Dom, Version) :-
+  wms_version_string(Dom, Atom),
+  wms_version_term(Version, Atom),
+  call_must_be(known_version, Version).
+
+% WMS 1.1.1
+wms_version_string(Dom, Atom) :-
+  xpath_chk(Dom, /'WMT_MS_Capabilities'(@version(string)), Atom), !.
+% WMS 1.3.0
+wms_version_string(Dom, Atom) :-
+  xpath_chk(Dom, /'WMS_Capabilities'(@version(string)), Atom).
+
+wms_version_term(version(Major,Minor,Patch), Atom) :-
+  ground(Atom), !,
+  atomic_list_concat([Major0,Minor0,Patch0], ., Atom),
+  maplist(atom_number, [Major0,Minor0,Patch0], [Major,Minor,Patch]).
+wms_version_term(version(Major,Minor,Patch), Atom) :-
+  format(atom(Atom), "~d.~d.~d", [Major,Minor,Patch]).
+
+
+
+
+
+% TMP %
+
+%! wms_capability(+Version:compound,
+%!                +Dom:compound,
+%!                -Formats:list(compound),
+%!                -ExceptionFormats:list(compound),
+%!                -Layers:list(dict)) is det.
 
 wms_capability(Version, Dom1, ExceptionFormats, Formats, Layers) :-
   xpath_chk(Dom1, //'Capability'(content), Dom2),
   wms_request(Dom2, Formats),
-  wms_exception(Dom2, ExceptionFormats),
-  wms_named_layers(Version, Dom2, Layers).
+  xpath_chk(Dom1, //'Exception'(content), Dom3),
+  aggregate_all(
+    set(ExceptionFormat),
+    (
+      xpath(Dom3, //'Format'(normalize_space), Atom),
+      atom_phrase(media_type(ExceptionFormat), Atom),
+      call_must_be(known_exception_format, ExceptionFormat)
+    ),
+    ExceptionFormats
+  ),
+  wms_named_layers(Version, Dom1, Layers).
 
 
 
@@ -247,52 +330,6 @@ wms_contact_person(Dom, Dict) :-
 
 
 
-%! wms_crses(+Version:compound, +Dom:compound, -CRSes:list(atom)) is det.
-
-wms_crses(Version, Dom, CRSes) :-
-  aggregate_all(set(CRS), wms_crs(Version, Dom, CRS), CRSes).
-
-wms_crs(Version, Dom, CRS) :-
-  wms_crs_string(Version, Dom, String),
-  wms_crs_term(String, CRS).
-
-wms_crs_string(version(1,1,1), Dom, String) :- !,
-  xpath(Dom, //'SRS'(normalize_space), String).
-wms_crs_string(version(1,3,0), Dom, String) :- !,
-  xpath(Dom, //'CRS'(normalize_space), String).
-wms_crs_string(Version, _, _) :-
-  domain_error(wms_version, Version).
-
-wms_crs_term(String1, Label) :-
-  atomic_list_concat([Namespace,String2], :, String1),
-  wms_crs_term_namespace(Namespace), !,
-  (   atomic_list_concat([Code,Params], ',', String2)
-  ->  Label = label(Namespace,Code,Params)
-  ;   Label = label(Namespace,String2)
-  ).
-wms_crs_term(Uri, uri(Uri)).
-
-wms_crs_term_namespace('AUTO2').
-wms_crs_term_namespace('CRS').
-wms_crs_term_namespace('EPSG').
-
-
-
-%! wms_exception(+Dom:compound, -Exception:dict) is det.
-
-wms_exception(Dom1, Formats) :-
-  xpath_chk(Dom1, //'Exception'(content), Dom2),
-  wms_formats(Dom2, Formats).
-
-
-
-%! wms_formats(+Dom:compound, -Formats:list(atom)) is det.
-
-wms_formats(Dom, Formats) :-
-  aggregate_all(set(Format), xpath(Dom, //'Format'(normalize_space), Format), Formats).
-
-
-
 %! wms_keywords(+Dom:compound, -Keywords:list(atom)) is det.
 
 wms_keywords(Dom, Keywords) :-
@@ -332,10 +369,20 @@ wms_layer_attribution_logo(Dom1, Dict) :-
 
 
 
-%! wms_layer_ex_bbox(+Version:compound, +Dom:compound, +Parent:dict, -BBox:compound) is det.
+%! wms_layer_ex_bbox(+Version:compound,
+%!                   +Dom:compound,
+%!                   +Parent:dict,
+%!                   -BBox:compound) is det.
 
 wms_layer_ex_bbox(version(1,1,1), Dom1, _, bbox(min(W,S),max(E,N))) :-
-  xpath_chk(Dom1, //'LatLonBoundingBox'(@maxx(number)=E,@maxy(number)=N,@minx(number)=W,@miny(number)=S), _), !.
+  xpath_chk(
+    Dom1,
+    //'LatLonBoundingBox'(@maxx(number)=E,
+                          @maxy(number)=N,
+                          @minx(number)=W,
+                          @miny(number)=S),
+    _
+  ), !.
 wms_layer_ex_bbox(version(1,3,0), Dom1, _, bbox(min(W,S),max(E,N))) :-
   xpath_chk(Dom1, //'EX_GeographicBoundingBox'(content), Dom2), !,
   xpath_chk(Dom2, //eastBoundLongitude(number), E),
@@ -501,7 +548,15 @@ wms_request(Dom1, Formats) :-
 
 wms_request_GetMap(Dom1, Formats) :-
   xpath_chk(Dom1, //'GetMap'(content), Dom2),
-  wms_formats(Dom2, Formats).
+  aggregate_all(
+    set(Format),
+    (
+      xpath(Dom2, //'Format'(normalize_space), Atom),
+      atom_phrase(media_type(Format), Atom),
+      call_must_be(known_format, Format)
+    ),
+    Formats
+  ).
 
 
 
@@ -569,20 +624,55 @@ wms_style_legend(Dom1, Dict) :-
 
 
 
-%! wms_version(+Dom:compound, -Version:compound) is det.
 
-wms_version(Dom, Version) :-
-  wms_version_string(Dom, String),
-  atomic_list_concat([Major0,Minor0,Patch0], ., String),
-  maplist(atom_number, [Major0,Minor0,Patch0], [Major,Minor,Patch]),
-  Version = version(Major,Minor,Patch).
 
-% WMS 1.1.1
-wms_version_string(Dom, Version) :-
-  xpath_chk(Dom, /'WMT_MS_Capabilities'(@version(string)), Version), !.
-% WMS 1.3.0
-wms_version_string(Dom, Version) :-
-  xpath_chk(Dom, /'WMS_Capabilities'(@version(string)), Version).
+% KNOWN VALUES %
+
+known_crs(label('EPSG','3857')).
+known_crs(label('EPSG','4269')).
+known_crs(label('EPSG','4326')).
+known_crs(label('EPSG','900913')).
+
+known_crs_namespace('AUTO2').
+known_crs_namespace('CRS').
+known_crs_namespace('EPSG').
+
+known_exception_format(media(application/'vnd.ogc.se_blank',[])).
+known_exception_format(media(application/'vnd.ogc.se_inimage',[])).
+known_exception_format(media(application/'vnd.ogc.se_xml',[])).
+
+known_format(media(application/'vnd.google-earth.kml+xml',[])).
+known_format(media(application/'vnd.google-earth.kmz',[])).
+known_format(media(application/'x-pdf',[])).
+known_format(media(image/'svg+xml',[])).
+known_format(media(image/gif,[])).
+known_format(media(image/jpeg,[])).
+known_format(media(image/png,[])).
+known_format(media(image/tiff,[])).
+
+known_version(version(1,1,1)).
+known_version(version(1,3,0)).
+
+
+
+
+
+% TESTS %
+
+%example('http://metaspatial.net/cgi-bin/ogc-wms.xml').
+example('http://warper.erfgoedleiden.nl/maps/wms/1313').
+
+
+
+
+
+% HELPERS %
+
+%! get_dict(+Key:atom, +Dict:dict, -Value, +Default) is det.
+
+get_dict(Key, Dict, Value, _) :-
+  get_dict(Key, Dict, Value), !.
+get_dict(_, _, Default, Default).
 
 
 
@@ -593,12 +683,3 @@ xpath_direct_indirect(Dom, Tag, Direct, Indirect) :-
   partition(indirect_tag(Tag), Doms, Indirect, Direct).
 
 indirect_tag(Tag, element(Tag,_,_)).
-
-
-
-
-
-% TESTS %
-
-%example('http://metaspatial.net/cgi-bin/ogc-wms.xml').
-example('http://warper.erfgoedleiden.nl/maps/wms/1313').
