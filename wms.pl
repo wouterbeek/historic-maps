@@ -150,7 +150,7 @@ wms_bbox(Version, Dom, CRS-Dict) :-
   % X maximum, X minimum, Y maximum, Y minimum
   xpath_chk(
     Dom,
-    'BoundingBox'(@maxx(number)=XMax,
+    //'BoundingBox'(@maxx(number)=XMax,
                   @maxy(number)=YMax,
                   @minx(number)=XMin,
                   @miny(number)=YMin),
@@ -169,12 +169,12 @@ wms_bbox(Version, Dom, CRS-Dict) :-
 
 wms_bbox_crs(Version, Dom, CRS) :-
   wms_bbox_crs_string(Version, Dom, Atom),
-  wms_crs_term(Atom, CRS).
+  wms_crs_term(CRS, Atom).
 
 wms_bbox_crs_string(version(1,1,1), Dom, Atom) :- !,
-  xpath_chk(Dom, //'BoundingBox'(@'SRS',string), Atom).
+  xpath_chk(Dom, //'BoundingBox'(@'SRS'(string)=Atom), _).
 wms_bbox_crs_string(version(1,3,0), Dom, Atom) :- !,
-  xpath_chk(Dom, //'BoundingBox'(@'CRS',string), Atom).
+  xpath_chk(Dom, //'BoundingBox'(@'CRS'(string)=Atom), _).
 wms_bbox_crs_string(Version, _, _) :-
   domain_error(wms_version, Version).
 
@@ -206,7 +206,7 @@ wms_crses(Version, Dom, CRSes) :-
 
 wms_crs(Version, Dom, CRS) :-
   wms_crs_string(Version, Dom, Atom),
-  wms_crs_term(Atom, CRS).
+  wms_crs_term(CRS, Atom).
 
 wms_crs_string(version(1,1,1), Dom, Atom) :- !,
   xpath(Dom, //'SRS'(normalize_space), Atom).
@@ -215,13 +215,20 @@ wms_crs_string(version(1,3,0), Dom, Atom) :- !,
 wms_crs_string(Version, _, _) :-
   domain_error(wms_version, Version).
 
-wms_crs_term(label(Namespace,Code,Params), Atom2) :-
-  wms_crs_term(label(Namespace,Code), Atom1),
-  known_crs_namespace(Namespace),
-  atomic_list_concat([Atom1,Params], ',', Atom2), !.
-wms_crs_term(label(Namespace,Code), Atom) :-
-  atomic_list_concat([Namespace,Code], :, Atom),
-  known_crs_namespace(Namespace), !.
+wms_crs_term(Term, Atom1) :-
+  ground(Atom1), !,
+  (   atomic_list_concat([Namespace,Atom2], :, Atom1)
+  ->  known_crs_namespace(Namespace),
+      (   atomic_list_concat([Code,Params], ',', Atom2)
+      ->  Term = label(Namespace,Code,Params)
+      ;   Term = label(Namespace,Atom2)
+      )
+  ;   Term = uri(Atom1)
+  ).
+wms_crs_term(label(Namespace,Code), Atom) :- !,
+  format(atom(Atom), "~a:~a", [Namespace,Code]).
+wms_crs_term(label(Namespace,Code,Params), Atom) :- !,
+  format(atom(Atom), "~a:~a,~a", [Namespace,Code,Params]).
 wms_crs_term(uri(Atom), Atom).
 
 
@@ -272,11 +279,14 @@ wms_capability(Version, Dom1, ExceptionFormats, Formats, Layers) :-
     (
       xpath(Dom3, //'Format'(normalize_space), Atom),
       atom_phrase(media_type(ExceptionFormat), Atom),
-      call_must_be(known_exception_format, ExceptionFormat)
+      (   known_exception_format(ExceptionFormat)
+      ->  true
+      ;   domain_error(exception_format, ExceptionFormat)
+      )
     ),
     ExceptionFormats
   ),
-  wms_named_layers(Version, Dom1, Layers).
+  wms_named_layers(Version, Dom2, Layers).
 
 
 
@@ -553,7 +563,7 @@ wms_request_GetMap(Dom1, Formats) :-
     (
       xpath(Dom2, //'Format'(normalize_space), Atom),
       atom_phrase(media_type(Format), Atom),
-      call_must_be(known_format, Format)
+      (known_format(Format) -> true ; domain_error(format, Format))
     ),
     Formats
   ).
@@ -637,18 +647,18 @@ known_crs_namespace('AUTO2').
 known_crs_namespace('CRS').
 known_crs_namespace('EPSG').
 
-known_exception_format(media(application/'vnd.ogc.se_blank',[])).
-known_exception_format(media(application/'vnd.ogc.se_inimage',[])).
-known_exception_format(media(application/'vnd.ogc.se_xml',[])).
+known_exception_format(media(application/'vnd.ogc.se_blank',_)).
+known_exception_format(media(application/'vnd.ogc.se_inimage',_)).
+known_exception_format(media(application/'vnd.ogc.se_xml',_)).
 
-known_format(media(application/'vnd.google-earth.kml+xml',[])).
-known_format(media(application/'vnd.google-earth.kmz',[])).
-known_format(media(application/'x-pdf',[])).
-known_format(media(image/'svg+xml',[])).
-known_format(media(image/gif,[])).
-known_format(media(image/jpeg,[])).
-known_format(media(image/png,[])).
-known_format(media(image/tiff,[])).
+known_format(media(application/'vnd.google-earth.kml+xml',_)).
+known_format(media(application/'vnd.google-earth.kmz',_)).
+known_format(media(application/'x-pdf',_)).
+known_format(media(image/'svg+xml',_)).
+known_format(media(image/gif,_)).
+known_format(media(image/jpeg,_)).
+known_format(media(image/png,_)).
+known_format(media(image/tiff,_)).
 
 known_version(version(1,1,1)).
 known_version(version(1,3,0)).
@@ -659,8 +669,7 @@ known_version(version(1,3,0)).
 
 % TESTS %
 
-%example('http://metaspatial.net/cgi-bin/ogc-wms.xml').
-example('http://warper.erfgoedleiden.nl/maps/wms/1313').
+example('http://metaspatial.net/cgi-bin/ogc-wms.xml').
 
 
 
