@@ -90,20 +90,18 @@ home_head -->
     ], [])
   ]).
 
-map_layers(Map, Service, Layers) :-
-  rdf_triple(Map, wms:serviceDescription, Service),
-  aggregate_all(set(Layer), map_layer(Service, Layer), Layers).
+map_layers(B, Map, Service, Layers) :-
+  tp(B, Map, wms:serviceDescription, Service),
+  aggregate_all(set(Layer), map_layer(B, Service, Layer), Layers).
 
-map_layer(Service, layer(LayerName,LayerTitle,point(X,Y))) :-
-  rdf_triple(Service, wms:layer, Layer),
-  rdf_triple(Layer, wms:name, LayerName0),
-  rdf_literal_value(LayerName0, LayerName),
+map_layer(B, Service, layer(LayerName,LayerTitle,point(X,Y))) :-
+  tp(B, Service, wms:layer, Layer),
+  tp_value(B, Layer, wms:name, LayerName),
   LayerName \== "MapWarper",
-  rdf_triple(Layer, rdfs:label, LayerTitle0),
-  rdf_literal_value(LayerTitle0, LayerTitle),
-  rdf_triple(Layer, geo:hasGeometry, Geo),
-  rdf_triple(Geo, wms:crs, 'EPSG':'4326'),
-  rdf_triple(Geo, geo:asWKT, literal(type(geo:wktLiteral,Lex))),
+  tp_value(Layer, rdfs:label, LayerTitle),
+  tp(B, Layer, geo:hasGeometry, Geo),
+  tp(B, Geo, wms:crs, 'EPSG':'4326'),
+  tp(B, Geo, geo:asWKT, literal(type(geo:wktLiteral,Lex))),
   wkt_shape_atom(shape(_,_,_,Term), Lex),
   Term = 'Polygon'(['LineString'(['Point'([XMax,YMax]),_,'Point'([XMin,YMin]),_,_])]),
   X is (XMin+XMax)/2,

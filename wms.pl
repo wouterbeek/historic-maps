@@ -1,7 +1,8 @@
+:- encoding(utf8).
 :- module(
   wms,
   [
-    assert_capabilities/2, % +RequestUri, -Service
+    assert_capabilities/3, % +Backend, +RequestUri, -Service
     get_map/9              % +Uri,
                            % +BBox,
                            % +Crs,
@@ -41,7 +42,6 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 :- use_module(library(os_ext)).
 :- use_module(library(pair_ext)).
 :- use_module(library(semweb/rdf_mem)).
-:- use_module(library(semweb/rdf_mem_gis), []).
 :- use_module(library(semweb/rdf_prefix)).
 :- use_module(library(semweb/rdf_term)).
 :- use_module(library(uri_ext)).
@@ -66,12 +66,14 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 
 
 
-%! assert_capabilities(+RequestUri:atom, -Service:iri) is det.
+
+
+%! assert_capabilities(+Backend, +RequestUri:atom, -Service:iri) is det.
 %
 % Returns the service metadata, using the highest version that is
 % supported by the server.
 
-assert_capabilities(RequestUri1, Service) :-
+assert_capabilities(B, RequestUri1, Service) :-
   uri_strip(RequestUri1, Service),
   uri_comp_set(
     query,
@@ -81,7 +83,7 @@ assert_capabilities(RequestUri1, Service) :-
   ),
   http_call(
     RequestUri2,
-    assert_capabilities_stream(Service),
+    assert_capabilities_stream(B, Service),
     [accept(media(application/'vnd.ogc.wms_xml',[charset('UTF-8')]))]
   ).
 
@@ -167,7 +169,8 @@ get_map(
 
 % ASSERT %
 
-%! assert_bboxes(+Version:compound,
+%! assert_bboxes(+Backend,
+%!               +Version:compound,
 %!               +LayerDom:compound,
 %!               +Parent:dict,
 %!               +Layer:iri,
@@ -182,19 +185,20 @@ get_map(
 % bounding boxes for the child Layer.  A single Layer element shall
 % not contain more than one BoundingBox for the same CRS.
 
-assert_bboxes(Version, LayerDom, Parent, Layer, Pairs) :-
+assert_bboxes(B, Version, LayerDom, Parent, Layer, Pairs) :-
   dict_get(bboxes, Parent, [], ParentPairs),
   aggregate_all(set(SelfPair), wms_bbox(Version, LayerDom, SelfPair), SelfPairs),
   merge_pairs(SelfPairs, ParentPairs, Pairs),
-  maplist(assert_bbox(Layer), Pairs).
+  maplist(assert_bbox(B, Layer), Pairs).
 
-assert_bbox(Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
+assert_bbox(B, Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
   include(ground, [XMax,YMax,XMin,YMin,XRes,YRes], L),
   rdf_create_hash_iri(id, [bbox], CrsTerm-L, BBox),
-  rdf_assert_triple(Layer, geo:hasGeometry, BBox),
-  rdf_assert_triple(BBox, rdf:type, wms:'BoundingBox'),
+  assert_triple(B, Layer, geo:hasGeometry, BBox),
+  assert_instance(B, BBox, wms:'BoundingBox'),
   rdf_equal('CRS':'84', Crs),
-  rdf_assert_triple(
+  assert_triple(
+    B,
     BBox,
     geo:asWKT,
     shape(
@@ -212,9 +216,9 @@ assert_bbox(Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
       ])
     )
   ),
-  (var(XRes) -> true ; rdf_assert_triple(BBox, wms:resolutionX, string(XRes))),
-  (var(YRes) -> true ; rdf_assert_triple(BBox, wms:resolutionY, string(YRes))),
-  assert_crs_term(BBox, CrsTerm).
+  (var(XRes) -> true ; assert_triple(B, BBox, wms:resolutionX, string(XRes))),
+  (var(YRes) -> true ; assert_triple(B, BBox, wms:resolutionY, string(YRes))),
+  assert_crs_term(B, BBox, CrsTerm).
 
 %! wms_bbox(+Version:compound,
 %!          +LayerDom:compound,
@@ -262,12 +266,15 @@ wms_bbox_crs_string(Version, _, _) :-
 
 
 
-%! assert_capability(+Version:compound, +CapabilityDom:compound, +Service:iri) is det.
+%! assert_capability(+Backend,
+%!                   +Version:compound,
+%!                   +CapabilityDom:compound,
+%!                   +Service:iri) is det.
 
-assert_capability(Version, CapabilityDom, Service) :-
+assert_capability(B, Version, CapabilityDom, Service) :-
   % /Exception
   xpath_chk(CapabilityDom, //'Exception'(content), ExceptionDom),
-  assert_exceptions(ExceptionDom, Service),
+  assert_exceptions(B, ExceptionDom, Service),
   % /Layer
   %
   % Each available map is advertised by a <Layer> element in the
@@ -285,22 +292,22 @@ assert_capability(Version, CapabilityDom, Service) :-
   % categories (i.e. enclosed in more than one parent <Layer>) when
   % relevant.
   forall(
-    assert_layer(Version, CapabilityDom, Service),
+    assert_layer(B, Version, CapabilityDom, Service),
     true
   ),
   % /Request
   xpath_chk(CapabilityDom, //'Request'(content), RequestDom),
-  assert_request(RequestDom, Service).
+  assert_request(B, RequestDom, Service).
 
 
 
-%! assert_capabilities_stream(+Service:iri, +In:stream) is det.
+%! assert_capabilities_stream(+Backend, +Service:iri, +In:stream) is det.
 
-assert_capabilities_stream(Service, In) :-
-  rdf_assert_triple(Service, rdf:type, wms:'Service'),
-  rdf_assert_triple(Service, wms:endpoint, uri(Service)),
+assert_capabilities_stream(B, Service, In) :-
+  assert_instance(B, Service, wms:'Service'),
+  assert_triple(B, Service, wms:endpoint, uri(Service)),
   load_xml(In, [Dom]),
-  assert_version(Dom, Service, Version),
+  assert_version(B, Dom, Service, Version),
   % /Service
   %
   % The first part of the service metadata is a <Service> element
@@ -310,7 +317,7 @@ assert_capabilities_stream(Service, In) :-
   % Fees, Access Constraints, and limits on the number of layers in a
   % request or the output size of maps.
   xpath_chk(Dom, //'Service'(content), ServiceDom),
-  assert_service(ServiceDom, Service),
+  assert_service(B, ServiceDom, Service),
   % /Capability
   %
   % The <Capability> element of the service metadata names the actual
@@ -320,66 +327,67 @@ assert_capabilities_stream(Service, In) :-
   % Computing Platforms other than HTTP, but currently only the HTTP
   % platform is defined.
   xpath_chk(Dom, //'Capability'(content), CapabilityDom),
-  assert_capability(Version, CapabilityDom, Service).
+  assert_capability(B, Version, CapabilityDom, Service).
 
 
 
-%! assert_contact_information(+ContactInformationDom:compound,
+%! assert_contact_information(+Backend,
+%!                            +ContactInformationDom:compound,
 %!                            +Service:iri) is semidet.
 
-assert_contact_information(ContactInformationDom, Service) :-
+assert_contact_information(B, ContactInformationDom, Service) :-
   rdf_create_hash_iri(id, [contact], ContactInformationDom, Contact),
-  rdf_assert_triple(Service, wms:contact, Contact),
-  rdf_assert_triple(Contact, rdf:type, wms:'Contact'),
+  assert_triple(B, Service, wms:contact, Contact),
+  assert_instance(B, Contact, wms:'Contact'),
   % /ContactAddress
   (   xpath_chk(ContactInformationDom, //'ContactAddress'(content), ContactAddressDom)
   ->  rdf_create_hash_iri(id, [address], ContactAddressDom, Address),
-      rdf_assert_triple(Contact, wms:address, Address),
-      rdf_assert_triple(Address, rdf:type, wms:'Address'),
+      assert_triple(B, Contact, wms:address, Address),
+      assert_triple(B, Address, rdf:type, wms:'Address'),
       xpath_chk(ContactAddressDom, //'AddressType'(normalize_space), Type),
-      rdf_assert_triple(Address, wms:addressType, string(Type)),
+      assert_triple(B, Address, wms:addressType, string(Type)),
       xpath_chk(ContactAddressDom, //'Address'(normalize_space), AddressString),
-      rdf_assert_triple(Address, wms:address, string(AddressString)),
+      assert_triple(B, Address, wms:address, string(AddressString)),
       xpath_chk(ContactAddressDom, //'City'(normalize_space), City),
-      rdf_assert_triple(Address, wms:city, string(City)),
+      assert_triple(B, Address, wms:city, string(City)),
       xpath_chk(ContactAddressDom, //'StateOrProvince'(normalize_space), StateOrProvince),
-      rdf_assert_triple(Address, wms:stateOrProvince, string(StateOrProvince)),
+      assert_triple(B, Address, wms:stateOrProvince, string(StateOrProvince)),
       xpath_chk(ContactAddressDom, //'PostCode'(normalize_space), PostCode),
-      rdf_assert_triple(Address, schema:postalCode, string(PostCode)),
+      assert_triple(B, Address, schema:postalCode, string(PostCode)),
       xpath_chk(ContactAddressDom, //'Country'(normalize_space), Country),
-      rdf_assert_triple(Address, wms:country, string(Country))
+      assert_triple(B, Address, wms:country, string(Country))
   ;   true
   ),
   % /ContactElectronicMailAddress
   (   xpath_chk(ContactInformationDom, //'ContactElectronicMailAddress'(normalize_space), EMail)
-  ->  rdf_assert_triple(Contact, schema:email, uri(EMail))
+  ->  assert_triple(B, Contact, schema:email, uri(EMail))
   ;   true
   ),
   % /ContactPersonPrimary
   (   xpath_chk(ContactInformationDom, //'ContactPersonPrimary'(content), ContactPersonDom)
   ->  rdf_create_hash_iri(id, [person], ContactPersonDom, Person),
-      rdf_assert_triple(Person, rdf:type, schema:'Person'),
-      rdf_assert_triple(Contact, wms:primaryPerson, Person),
+      assert_triple(B, Person, rdf:type, schema:'Person'),
+      assert_triple(B, Contact, wms:primaryPerson, Person),
       xpath_chk(ContactPersonDom, //'ContactPerson'(normalize_space), Name),
-      rdf_assert_triple(Person, schema:name, string(Name)),
+      assert_triple(B, Person, schema:name, string(Name)),
       xpath_chk(ContactPersonDom, //'ContactOrganization'(normalize_space), Organization),
-      rdf_assert_triple(Person, schema:organization, string(Organization))
+      assert_triple(B, Person, schema:organization, string(Organization))
   ;   true
   ),
   % /ContactPosition
   (   xpath_chk(ContactInformationDom, //'ContactPosition'(normalize_space), Position)
-  ->  rdf_assert_triple(Contact, wms:position, string(Position))
+  ->  assert_triple(B, Contact, wms:position, string(Position))
   ;   true
   ).
 
 
 
-%! assert_crs(+Version:compound, +Dom:compound, +Iri:iri, -CrsTerm:compound) is det.
+%! assert_crs(+Backend, +Version:compound, +Dom:compound, +Iri:iri, -CrsTerm:compound) is det.
 
-assert_crs(Version, Dom, Iri, Term) :-
+assert_crs(B, Version, Dom, Iri, Term) :-
   wms_crs_string(Version, Dom, Atom),
   wms_crs_term(Term, Atom),
-  assert_crs_term(Iri, Term).
+  assert_crs_term(B, Iri, Term).
 
 wms_crs_string(version(1,1,1), Dom, Atom) :- !,
   xpath(Dom, //'SRS'(normalize_space), Atom).
@@ -405,78 +413,79 @@ wms_crs_term(uri(Atom), Atom).
 
 
 
-%! assert_crs_term(+Iri:iri, +CrsTerm:compound) is det.
+%! assert_crs_term(+Backend, +Iri:iri, +CrsTerm:compound) is det.
 
-assert_crs_term(Iri, label(Namespace,Code)) :- !,
+assert_crs_term(B, Iri, label(Namespace,Code)) :- !,
   rdf_prefix_iri(Namespace, Code, Crs),
-  assert_crs_term(Iri, uri(Crs)).
+  assert_crs_term(B, Iri, uri(Crs)).
 % @tbs What to do with parameters?
-assert_crs_term(Iri, label(Namespace,Code,_)) :- !,
-  assert_crs_term(Iri, label(Namespace,Code)).
-assert_crs_term(Iri, uri(Crs)) :-
-  rdf_assert_triple(Iri, wms:crs, Crs).
+assert_crs_term(B, Iri, label(Namespace,Code,_)) :- !,
+  assert_crs_term(B, Iri, label(Namespace,Code)).
+assert_crs_term(B, Iri, uri(Crs)) :-
+  assert_triple(B, Iri, wms:crs, Crs).
 
 
 
-%! assert_ex_bbox(+Version:compound,
+%! assert_ex_bbox(+Backend,
+%!                +Version:compound,
 %!                +LayerDom:compound,
 %!                +Parent:dict,
 %!                +Layer:iri,
 %!                -ExBBox:list(integer)) is det.
 
-assert_ex_bbox(Version, LayerDom, Parent, Layer, [E,N,S,W]) :-
+assert_ex_bbox(B, Version, LayerDom, Parent, Layer, [E,N,S,W]) :-
   'EX_GeographicBoundingBox'(Version, LayerDom, Parent, [E,N,S,W]),%ex_bbox
   atomic_list_concat([E,N,S,W], '_', ExBBoxLocal),
   rdf_prefix_iri(bbox, ExBBoxLocal, ExBBox),
-  rdf_assert_triple(ExBBox, rdf:type, wms:'GeographicBoundingBox'),
+  assert_triple(B, ExBBox, rdf:type, wms:'GeographicBoundingBox'),
   format(string(ExBBoxLabel), "East: ~f, North: ~f, South: ~f, West: ~f", [E,N,S,W]),
-  rdf_assert_triple(ExBBox, rdfs:label, string(ExBBoxLabel)),
-  rdf_assert_triple(Layer, wms:exBBox, ExBBox),
-  rdf_assert_triple(ExBBox, wms:eastBoundLongitude, E),
-  rdf_assert_triple(ExBBox, wms:northBoundLongitude, N),
-  rdf_assert_triple(ExBBox, wms:westBoundLongitude, W),
-  rdf_assert_triple(ExBBox, wms:southBoundLongitude, S).
+  assert_triple(B, ExBBox, rdfs:label, string(ExBBoxLabel)),
+  assert_triple(B, Layer, wms:exBBox, ExBBox),
+  assert_triple(B, ExBBox, wms:eastBoundLongitude, E),
+  assert_triple(B, ExBBox, wms:northBoundLongitude, N),
+  assert_triple(B, ExBBox, wms:westBoundLongitude, W),
+  assert_triple(B, ExBBox, wms:southBoundLongitude, S).
 
 
 
-%! assert_exceptions(+ExceptionDom:compound, +Service:iri) is det.
+%! assert_exceptions(+Backend, +ExceptionDom:compound, +Service:iri) is det.
 
-assert_exceptions(ExceptionDom, Service) :-
+assert_exceptions(B, ExceptionDom, Service) :-
   aggregate_all(
     set(Format),
     xpath(ExceptionDom, //'Format'(normalize_space), Format),
     Formats1
   ),
   (Formats1 == [] -> Formats2 = ['XML'] ; Formats2 = Formats1),
-  maplist(assert_exception_format(Service), Formats2).
+  maplist(assert_exception_format(B, Service), Formats2).
 
-assert_exception_format(Service, Format) :-
-  rdf_assert_triple(Service, wms:exceptionFormat, string(Format)).
+assert_exception_format(B, Service, Format) :-
+  assert_triple(B, Service, wms:exceptionFormat, string(Format)).
 
 
 
-%! assert_formats(+Dom:compound, +Iri:iri) is det.
+%! assert_formats(+Backend, +Dom:compound, +Iri:iri) is det.
 
-assert_formats(Dom, Iri) :-
+assert_formats(B, Dom, Iri) :-
   forall(
     xpath(Dom, //'Format'(normalize_space), Atom),
     (
-      rdf_assert_triple(Iri, wms:formatString, string(Atom)),
+      assert_triple(B, Iri, wms:formatString, string(Atom)),
       atom_phrase(media_type(MediaType), Atom),
       (   known_format(MediaType)
-      ->  rdf_assert_media_type(Iri, wms:format, MediaType)
+      ->  assert_media_type(B, Iri, wms:format, MediaType)
       ;   domain_error(exception_format, MediaType)
       )
     )
   ).
 
-rdf_assert_media_type(S, P, media(Supertype/Subtype,_)) :-
+rdf_assert_media_type(B, S, P, media(Supertype/Subtype,_)) :-
   atomic_list_concat([Supertype,Subtype], -, Local),
   rdf_prefix_iri(mediaType, Local, MediaType),
-  rdf_assert_triple(S, P, MediaType),
-  rdf_assert_triple(MediaType, rdf:type, wms:'MediaType'),
-  rdf_assert_triple(MediaType, wms:supertype, string(Supertype)),
-  rdf_assert_triple(MediaType, wms:subtype, string(Subtype)).
+  assert_triple(B, S, P, MediaType),
+  assert_instance(B, MediaType, wms:'MediaType'),
+  assert_triple(B, MediaType, wms:supertype, string(Supertype)),
+  assert_triple(B, MediaType, wms:subtype, string(Subtype)).
 
 
 
@@ -490,15 +499,15 @@ rdf_assert_media_type(S, P, media(Supertype/Subtype,_)) :-
 % “vocabulary” attribute values.  No particular vocabulary is mandated
 % by this International Standard.
 
-assert_keywords(Dom, Iri) :-
+assert_keywords(B, Dom, Iri) :-
   forall(
     xpath(Dom, //'KeywordList'//'Keyword'(normalize_space), Keyword),
-    rdf_assert_triple(Iri, wms:keyword, string(Keyword))
+    assert_triple(B, Iri, wms:keyword, string(Keyword))
   ).
 
 
 
-%! assert_layer(+Version:compound, +CapabilityDom:compound, +Service:iri) is nondet.
+%! assert_layer(+Backend, +Version:compound, +CapabilityDom:compound, +Service:iri) is nondet.
 %
 % @tbd AuthorityURL
 % @tbd cascaded
@@ -512,11 +521,11 @@ assert_keywords(Dom, Iri) :-
 % @tbd opaque
 % @tbd queryable
 
-assert_layer(Version, Dom, Service) :-
-  assert_layer(Version, Dom, layer{}, Service).
+assert_layer(B, Version, Dom, Service) :-
+  assert_layer(B, Version, Dom, layer{}, Service).
 
 
-assert_layer(Version, Dom, Parent, Service) :-
+assert_layer(B, Version, Dom, Parent, Service) :-
   xpath_direct_indirect(Dom, 'Layer', LayerDom, IndirectDom),
   % /Title
   %
@@ -527,9 +536,9 @@ assert_layer(Version, Dom, Parent, Service) :-
   split_string(LayerTitle, " \n\t", " \n\t", Atoms),
   atomic_list_concat(Atoms, -, LayerLocal),
   rdf_prefix_iri(layer, LayerLocal, Layer),
-  rdf_assert_triple(Layer, rdf:type, wms:'Layer'),
-  rdf_assert_triple(Layer, rdfs:label, string(LayerTitle)),
-  rdf_assert_triple(Service, wms:layer, Layer),
+  assert_triple(B, Layer, rdf:type, wms:'Layer'),
+  assert_triple(B, Layer, rdfs:label, string(LayerTitle)),
+  assert_triple(B, Service, wms:layer, Layer),
   % /KeywordList (optional, not inherited)
   %
   % A list of keywords or keyword phrases describing each layer should
@@ -539,7 +548,7 @@ assert_layer(Version, Dom, Parent, Service) :-
   %
   % KeywordList contains zero or more <Keyword> elements to aid in
   % catalogue searches.
-  assert_keywords(LayerDom, Layer),
+  assert_keywords(B, LayerDom, Layer),
   % /Name (optional)
   %
   % If, and only if, a layer has a <Name>, then it is a map layer that
@@ -561,14 +570,14 @@ assert_layer(Version, Dom, Parent, Service) :-
   %
   % The Name is not inherited by child Layers.
   (   xpath_chk(LayerDom, //'Name'(normalize_space), Name)
-  ->  rdf_assert_triple(Layer, wms:name, string(Name))
+  ->  assert_triple(B, Layer, wms:name, string(Name))
   ;   true
   ),
   % /Abstract (optional, not inherited)
   %
   % Abstract is a narrative description of the map layer.
   (   xpath_chk(LayerDom, //'Abstract'(normalize_space), Abstract)
-  ->  rdf_assert_triple(Layer, rdfs:comment, string(Abstract))
+  ->  assert_triple(B, Layer, rdfs:comment, string(Abstract))
   ;   true
   ),
   % /Style (optional, default value, additive inheritance)
@@ -583,7 +592,7 @@ assert_layer(Version, Dom, Parent, Service) :-
     set(Style),
     (
       xpath(LayerDom, /'Style', StyleDom),
-      assert_style(StyleDom, Layer, Style)
+      assert_style(B, StyleDom, Layer, Style)
     ),
     SelfStyles
   ),
@@ -602,9 +611,9 @@ assert_layer(Version, Dom, Parent, Service) :-
   % are not natively in geographic coordinates.  The purpose of
   % EX_GeographicBoundingBox is to facilitate geographic searches
   % without requiring coordinate transformations by the search engine.
-  assert_ex_bbox(Version, LayerDom, Parent, Layer, ExBBox),
+  assert_ex_bbox(B, Version, LayerDom, Parent, Layer, ExBBox),
   % bounding boxes (inheritance:replace)
-  assert_bboxes(Version, LayerDom, Parent, Layer, Pairs),
+  assert_bboxes(B, Version, LayerDom, Parent, Layer, Pairs),
   % CRSes (additive inheritance)
   %
   % Every Layer is available in one or more layer coordinate reference
@@ -624,12 +633,12 @@ assert_layer(Version, Dom, Parent, Service) :-
   dict_get(crses, Parent, [], ParentCrsTerms),
   aggregate_all(
     set(CrsTerm),
-    assert_crs(Version, LayerDom, Layer, CrsTerm),
+    assert_crs(B, Version, LayerDom, Layer, CrsTerm),
     SelfCrsTerms
   ),
   ord_union(ParentCrsTerms, SelfCrsTerms, CrsTerms),
   % keywords (optional)
-  assert_keywords(LayerDom, Layer),
+  assert_keywords(B, LayerDom, Layer),
   % /MetadataURL (optional, no inheritance)
   %
   % A server should use one or more <MetadataURL> elements to offer
@@ -648,10 +657,10 @@ assert_layer(Version, Dom, Parent, Service) :-
     xpath(LayerDom, //'MetadataURL'(@type(string)=MetadataType,content), MetadataDom),
     (
       xpath_chk(MetadataDom, /'OnlineResource'(@'xlink:href'), MetadataURL),
-      rdf_assert_triple(Layer, wms:metadataURL, MetadataURL),
-      rdf_assert_triple(MetadataURL, rdf:type, wms:'MetadataURL'),
+      assert_triple(B, Layer, wms:metadataURL, MetadataURL),
+      assert_triple(B, MetadataURL, rdf:type, wms:'MetadataURL'),
       assert_formats(MetadataDom, MetadataURL),
-      rdf_assert_triple(MetadataURL, wms:type, string(MetadataType))
+      assert_triple(B, MetadataURL, wms:type, string(MetadataType))
     )
   ),
   % /MaxScaleDenominator (optional, default inheritance)
@@ -673,11 +682,11 @@ assert_layer(Version, Dom, Parent, Service) :-
   % otherwise poorly suited for display; the server shall not respond
   % with a service exception.
   (   'MaxScaleDenominator'(LayerDom, Parent, MaxScaleDenominator)
-  ->  rdf_assert_triple(Layer, wms:maxScaleDenominator, integer(MaxScaleDenominator))
+  ->  assert_triple(B, Layer, wms:maxScaleDenominator, integer(MaxScaleDenominator))
   ;   true
   ),
   (   'MinScaleDenominator'(LayerDom, Parent, MinScaleDenominator)
-  ->  rdf_assert_triple(Layer, wms:minScaleDenominator, integer(MinScaleDenominator))
+  ->  assert_triple(B, Layer, wms:minScaleDenominator, integer(MinScaleDenominator))
   ;   true
   ),
   Self = layer{
@@ -710,16 +719,16 @@ assert_layer(Version, Dom, Parent, Service) :-
             //'OnlineResource'(normalize_space),
             AttributionUri
           )
-      ->  rdf_assert_triple(Layer, wms:attributionURL, uri(AttributionUri))
+      ->  assert_triple(B, Layer, wms:attributionURL, uri(AttributionUri))
       ;   true
       ),
       % /Title
       xpath_chk(AttributionDom, //'Title'(normalize_space), AttributionTitle),
-      rdf_assert_triple(Layer, wms:attribution, string(AttributionTitle))
+      assert_triple(B, Layer, wms:attribution, string(AttributionTitle))
   ;   true
   ),
   (   dict_get(iri, Parent, ParentLayer)
-  ->  rdf_assert_triple(ParentLayer, wms:hasChild, Layer)
+  ->  assert_triple(B, ParentLayer, wms:hasChild, Layer)
   ;   true
   ),
   (   % If, and only if, a layer has a <Name>, then it is a map layer
@@ -731,7 +740,7 @@ assert_layer(Version, Dom, Parent, Service) :-
       % nested within.
       ground(Name)
   ;   % Explore children.
-      assert_layer(Version, IndirectDom, Self, Service)
+      assert_layer(B, Version, IndirectDom, Self, Service)
   ).
 
 xpath_direct_indirect(Dom, Tag, DirectDom, IndirectDom) :-
@@ -742,14 +751,14 @@ indirect_tag(Tag, element(Tag,_,_)).
 
 
 
-%! assert_legend(+LegendDom:compound, +Style:iri) is det.
+%! assert_legend(+Backend, +LegendDom:compound, +Style:iri) is det.
 
-assert_legend(LegendDom, Style) :-
+assert_legend(B, LegendDom, Style) :-
   % /OnlineResource
   xpath_chk(LegendDom, /'OnlineResource'('xlink:href'(normalize_space)), Legend),
-  rdf_assert_triple(Legend, rdf:type, wms:'Legend'),
-  rdf_assert_triple(Style, wms:legend, Legend),
-  rdf_assert_triple(Legend, rdfs:seeAlso, uri(Legend)),
+  rdf_assert_triple(B, Legend, wms:'Legend'),
+  rdf_assert_triple(B, Style, wms:legend, Legend),
+  rdf_assert_triple(B, Legend, rdfs:seeAlso, uri(Legend)),
   % A <Format> element in LegendURL indicates the MIME type of the
   % legend image, and the optional attributes width and height state
   % the size of the image in pixels.  Servers should provide the width
@@ -759,42 +768,42 @@ assert_legend(LegendDom, Style) :-
   % portrayal.  The legend image should not contain text that
   % duplicates the Title of the layer, because that information is
   % known to the client and may be shown to the user by other means.
-  assert_formats(LegendDom, Legend),
+  assert_formats(B, LegendDom, Legend),
   (   xpath_chk(LegendDom, /self(@height(number)), Height)
-  ->  rdf_assert_triple(Legend, wms:height, positive_integer(Height))
+  ->  assert_triple(B, Legend, wms:height, positive_integer(Height))
   ;   true
   ),
   (   xpath_chk(LegendDom, /self(@width(number)), Width)
-  ->  rdf_assert_triple(Legend, wms:width, positive_integer(Width))
+  ->  assert_triple(B, Legend, wms:width, positive_integer(Width))
   ;   true
   ).
 
 
 
-%! assert_request(+RequestDom:compound, +Service:iri) is det.
+%! assert_request(+Backend, +RequestDom:compound, +Service:iri) is det.
 
-assert_request(RequestDom, Service) :-
+assert_request(B, RequestDom, Service) :-
   % /GetMap
   xpath_chk(RequestDom, //'GetMap'(content), GetMapDom),
-  assert_request_GetMap(GetMapDom, Service).
+  assert_request_GetMap(B, GetMapDom, Service).
 
 
 
-%! assert_request_GetMap(+GetMapDom:compound, +Service:iri) is det.
+%! assert_request_GetMap(+Backend, +GetMapDom:compound, +Service:iri) is det.
 
-assert_request_GetMap(GetMapDom, Service) :-
-  assert_formats(GetMapDom, Service).
+assert_request_GetMap(B, GetMapDom, Service) :-
+  assert_formats(B, GetMapDom, Service).
 
 
 
-%! assert_service(+ServiceDom:compound, +Service:iri) is det.
+%! assert_service(+Backend, +ServiceDom:compound, +Service:iri) is det.
 %
 % @tbd DescribeLayer
 % @tbd GetCapabilities
 % @tbd GetFeatureInfo
 % @tbd GetLegendGraphic
 % @tbd GetStyles
-assert_service(ServiceDom, Service) :-
+assert_service(B, ServiceDom, Service) :-
   % /Name
   %
   % The Service Name shall be “WMS” in the case of a WMS.
@@ -809,13 +818,13 @@ assert_service(ServiceDom, Service) :-
   % be brief yet descriptive enough to identify this server in a menu
   % with other servers.
   xpath_chk(ServiceDom, //'Title'(normalize_space), ServiceTitle),
-  rdf_assert_triple(Service, rdfs:label, string(ServiceTitle)),
+  assert_triple(B, Service, rdfs:label, string(ServiceTitle)),
   % /Abstract
   %
   % The Abstract element allows a descriptive narrative providing more
   % information about the enclosing object.
   (   xpath_chk(ServiceDom, //'Abstract'(normalize_space), ServiceAbstract)
-  ->  rdf_assert_triple(Service, rdfs:comment, string(ServiceAbstract))
+  ->  assert_triple(B, Service, rdfs:comment, string(ServiceAbstract))
   ;   true
   ),
   % /OnlineResource
@@ -826,19 +835,19 @@ assert_service(ServiceDom, Service) :-
   % operation (see below).
   (   xpath_chk(ServiceDom, //'OnlineResource'(normalize_space), OnlineResource),
       OnlineResource \== ''
-  ->  rdf_assert_triple(Service, rdfs:seeAlso, uri(OnlineResource))
+  ->  assert_triple(B, Service, rdfs:seeAlso, uri(OnlineResource))
   ;   true
   ),
   % /KeywordList/Keyword
   %
   % A list of keywords or keyword phrases describing the server as a
   % whole should be included to help catalogue searching.
-  assert_keywords(ServiceDom, Service),
+  assert_keywords(B, ServiceDom, Service),
   % /ContactInformation
   %
   % Contact Information should be included.
   xpath_chk(ServiceDom, //'ContactInformation'(content), ContactInformationDom),
-  assert_contact_information(ContactInformationDom, Service),
+  assert_contact_information(B, ContactInformationDom, Service),
   % /LayerLimit
   %
   % The optional <LayerLimit> element in the service metadata is a
@@ -846,7 +855,7 @@ assert_service(ServiceDom, Service) :-
   % is permitted to include in a single GetMap request.  If this
   % element is absent, the server imposes no limit.
   (   xpath_chk(ServiceDom, //'LayerLimit'(number), MaxLayers)
-  ->  rdf_assert_triple(Service, wms:layerLimit, positive_integer(MaxLayers))
+  ->  assert_triple(B, Service, wms:layerLimit, positive_integer(MaxLayers))
   ;   true
   ),
   % /MaxHeight
@@ -858,11 +867,11 @@ assert_service(ServiceDom, Service) :-
   % GetMap request.  If either element is absent the server imposes no
   % limit on the corresponding parameter.
   (   xpath_chk(ServiceDom, //'MaxHeight'(number), MaxHeight)
-  ->  rdf_assert_triple(Service, wms:maxHeight, positive_integer(MaxHeight))
+  ->  assert_triple(B, Service, wms:maxHeight, positive_integer(MaxHeight))
   ;   true
   ),
   (   xpath_chk(ServiceDom, //'MaxWidth'(number), MaxWidth)
-  ->  rdf_assert_triple(Service, wms:maxWidth, positive_integer(MaxWidth))
+  ->  assert_triple(B, Service, wms:maxWidth, positive_integer(MaxWidth))
   ;   true
   ),
   % /AccessConstraints
@@ -878,19 +887,19 @@ assert_service(ServiceDom, Service) :-
   % of these elements, but client applications may display the content
   % for user information and action.
   (   xpath_chk(ServiceDom, //'AccessConstraints'(normalize_space), AccessConstraints)
-  ->  rdf_assert_triple(Service, wms:accessConstraints, string(AccessConstraints))
+  ->  assert_triple(B, Service, wms:accessConstraints, string(AccessConstraints))
   ;   true
   ),
   (   xpath_chk(ServiceDom, //'Fees'(normalize_space), ServiceFees)
-  ->  rdf_assert_triple(Service, wms:fees, string(ServiceFees))
+  ->  assert_triple(B, Service, wms:fees, string(ServiceFees))
   ;   true
   ).
 
 
 
-%! assert_style(+StyleDom:compound, +Layer:iri, -Style:iri) is semidet.
+%! assert_style(+Backend, +StyleDom:compound, +Layer:iri, -Style:iri) is semidet.
 
-assert_style(StyleDom, Layer, Style) :-
+assert_style(B, StyleDom, Layer, Style) :-
   % /Name
   % /Title
   %
@@ -902,23 +911,23 @@ assert_style(StyleDom, Layer, Style) :-
   % not redefine a Style with the same Name as one inherited from a
   % parent.  A child may define a new Style with a new Name that is
   % not available for the parent Layer.
-  (   rdf_triple(Parent, wms:child, Layer),
-      rdf_triple(Parent, wms:name, string(StyleName))
+  (   tp(B, Parent, wms:child, Layer),
+      tp(B, Parent, wms:name, string(StyleName))
   ->  throw(error(wms_style, StyleName))
   ;   true
   ),
   rdf_prefix_iri(style, StyleName, Style),
-  (rdf_triple(Style, rdf:type, wms:'Style') -> gtrace ; true),%DEB
-  rdf_assert_triple(Layer, wms:style, Style),
-  rdf_assert_triple(Style, rdf:type, wms:'Style'),
-  rdf_assert_triple(Style, wms:name, string(StyleName)),
+  (instance(B, Style, wms:'Style') -> gtrace ; true),%DEB
+  assert_triple(B, Layer, wms:style, Style),
+  assert_instance(B, Style, wms:'Style'),
+  assert_triple(B, Style, wms:name, string(StyleName)),
   xpath_chk(StyleDom, /'Title'(normalize_space), StyleTitle),
-  rdf_assert_triple(Style, rdfs:label, string(StyleTitle)),
+  assert_triple(B, Style, rdfs:label, string(StyleTitle)),
   % /Abstract
   %
   % <Abstract> provides a narrative description.
   (   xpath_chk(StyleDom, /'Abstract'(normalize_space), StyleAbstract)
-  ->  rdf_assert_triple(Style, rdfs:comment, string(StyleAbstract))
+  ->  assert_triple(B, Style, rdfs:comment, string(StyleAbstract))
   ;   true
   ),
   % /LegendURL
@@ -926,26 +935,26 @@ assert_style(StyleDom, Layer, Style) :-
   % <LegendURL> contains the location of an image of a map legend
   % appropriate to the enclosing style.
   (   xpath_chk(StyleDom, /'LegendURL', LegendDom)
-  ->  assert_legend(LegendDom, Style)
+  ->  assert_legend(B, LegendDom, Style)
   ;   true
   ).
 
 
 
-%! assert_version(+VersionDom:compound, +Service:iri, -Version:compound) is det.
+%! assert_version(+Backend, +VersionDom:compound, +Service:iri, -Version:compound) is det.
 
-assert_version(Dom, Service, Term) :-
+assert_version(B, Dom, Service, Term) :-
   wms_version_string(Dom, Atom),
   wms_version_term(Term, Atom),
   call_must_be(known_version, Term),
   Term = version(Major,Minor,Patch),
   rdf_prefix_iri(version, Atom, Version),
-  rdf_assert_triple(Service, sv:hasVersion, Version),
-  rdf_assert_triple(Version, rdf:type, sv:'Version'),
-  rdf_assert_triple(Version, rdfs:label, string(Atom)),
-  rdf_assert_triple(Version, sv:major, Major),
-  rdf_assert_triple(Version, sv:minor, Minor),
-  rdf_assert_triple(Version, sv:patch, Patch).
+  assert_triple(B, Service, sv:hasVersion, Version),
+  assert_instance(B, Version, sv:'Version'),
+  assert_triple(B, Version, rdfs:label, string(Atom)),
+  assert_triple(B, Version, sv:major, Major),
+  assert_triple(B, Version, sv:minor, Minor),
+  assert_triple(B, Version, sv:patch, Patch).
 
 % WMS 1.1.1
 wms_version_string(Dom, Atom) :-
