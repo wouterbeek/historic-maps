@@ -41,6 +41,7 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 :- use_module(library(media_type)).
 :- use_module(library(os_ext)).
 :- use_module(library(pair_ext)).
+:- use_module(library(semweb/rdf_api)).
 :- use_module(library(semweb/rdf_mem)).
 :- use_module(library(semweb/rdf_prefix)).
 :- use_module(library(semweb/rdf_term)).
@@ -49,19 +50,19 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 
 :- maplist(rdf_register_prefix, [
      'AUTO2'-'http://www.opengis.net/def/crs/OGC/1.3/AUTO',
-     bbox-'https://demo.triply.cc/wouter/wms/id/bbox/',
+     bbox-'https://triply.cc/ogc/wms/id/bbox/',
      'CRS'-'http://www.opengis.net/def/crs/OGC/1.3/CRS',
-     crs-'https://demo.triply.cc/wouter/wms/id/crs/',
+     crs-'https://triply.cc/ogc/wms/id/crs/',
      'EPSG'-'http://www.opengis.net/def/crs/EPSG/0/',
      geo,
-     id-'https://demo.triply.cc/wouter/wms/id/',
-     layer-'https://demo.triply.cc/wouter/wms/id/layer/',
-     mediaType-'https://demo.triply.cc/wouter/wms/id/mediaType/',
+     id-'https://triply.cc/ogc/wms/id/',
+     layer-'https://triply.cc/ogc/wms/id/layer/',
+     mediaType-'https://triply.cc/ogc/wms/id/mediaType/',
      schema,
-     style-'https://demo.triply.cc/wouter/wms/id/style/',
-     sv-'https://demo.triply.cc/wouter/sv/def/',
-     version-'https://demo.triply.cc/wouter/wms/id/version/',
-     wms-'https://demo.triply.cc/ogc/wms/def/'
+     style-'https://triply.cc/ogc/wms/id/style/',
+     sv-'https://triply.cc/ogc/sv/def/',
+     version-'https://triply.cc/ogc/wms/id/version/',
+     wms-'https://triply.cc/ogc/wms/def/'
    ]).
 
 
@@ -479,7 +480,7 @@ assert_formats(B, Dom, Iri) :-
     )
   ).
 
-rdf_assert_media_type(B, S, P, media(Supertype/Subtype,_)) :-
+assert_media_type(B, S, P, media(Supertype/Subtype,_)) :-
   atomic_list_concat([Supertype,Subtype], -, Local),
   rdf_prefix_iri(mediaType, Local, MediaType),
   assert_triple(B, S, P, MediaType),
@@ -659,7 +660,7 @@ assert_layer(B, Version, Dom, Parent, Service) :-
       xpath_chk(MetadataDom, /'OnlineResource'(@'xlink:href'), MetadataURL),
       assert_triple(B, Layer, wms:metadataURL, MetadataURL),
       assert_triple(B, MetadataURL, rdf:type, wms:'MetadataURL'),
-      assert_formats(MetadataDom, MetadataURL),
+      assert_formats(B, MetadataDom, MetadataURL),
       assert_triple(B, MetadataURL, wms:type, string(MetadataType))
     )
   ),
@@ -756,9 +757,9 @@ indirect_tag(Tag, element(Tag,_,_)).
 assert_legend(B, LegendDom, Style) :-
   % /OnlineResource
   xpath_chk(LegendDom, /'OnlineResource'('xlink:href'(normalize_space)), Legend),
-  rdf_assert_triple(B, Legend, wms:'Legend'),
-  rdf_assert_triple(B, Style, wms:legend, Legend),
-  rdf_assert_triple(B, Legend, rdfs:seeAlso, uri(Legend)),
+  assert_instance(B, Legend, wms:'Legend'),
+  assert_triple(B, Style, wms:legend, Legend),
+  assert_triple(B, Legend, rdfs:seeAlso, uri(Legend)),
   % A <Format> element in LegendURL indicates the MIME type of the
   % legend image, and the optional attributes width and height state
   % the size of the image in pixels.  Servers should provide the width

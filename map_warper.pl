@@ -26,8 +26,10 @@ The following URIs can be used for testing:
 
 :- use_module(library(dcg)).
 :- use_module(library(http/http_client2)).
+:- use_module(library(semweb/rdf_api)).
 :- use_module(library(semweb/rdf_mem)).
 :- use_module(library(semweb/rdf_prefix)).
+:- use_module(library(semweb/rdf_term)).
 :- use_module(library(uri_ext)).
 
 :- use_module(wms).
@@ -35,7 +37,7 @@ The following URIs can be used for testing:
 :- curl.
 
 :- maplist(rdf_register_prefix, [
-     mw-'https://demo.triply.cc/wouter/mapwarper/def/',
+     def-'https://triply.cc/open-geo-metadata/def/',
      rdf
    ]).
 
@@ -50,17 +52,19 @@ assert_maps(Uri) :-
   append_segments(Segments1, [maps], Segments2),
   between(1, inf, N),
   uri_comps(BaseUri, uri(Scheme,Auth,Segments2,[page(N),per_page(100)],_)),
-  http_call(BaseUri, assert_maps(BaseUri), [accept(html)]).
+  rdf_default_graph(G),
+  B = mem(G),
+  http_call(BaseUri, assert_maps(B, BaseUri), [accept(html)]).
 
-assert_maps(BaseUri, In) :-
+assert_maps(B, BaseUri, In) :-
   load_html(In, Dom, [space(remove)]),
   xpath_chk(Dom, //div(@class=maplist_title), _), !,
   xpath(Dom, //div(@class=maplist_title)/a(@href), RelUri),
   uri_resolve(RelUri, BaseUri, Map),
   uri_comp_set(fragment, Map, 'Exporteer_tab', ExportUri),
-  http_call(ExportUri, assert_map(Map), [accept(html)]).
+  http_call(ExportUri, assert_map(B, Map), [accept(html)]).
 
-assert_map(Map, In) :-
+assert_map(B, Map, In) :-
   load_html(In, Dom, [space(remove)]),
   xpath_chk(Dom, //span(@class=maplist_title,normalize_space), Title),
   xpath_chk(Dom, //span(@class=map_description,normalize_space), Description),
@@ -70,13 +74,13 @@ assert_map(Map, In) :-
     xpath(Dom, //ul/li/a(@href), RequestUri),
     sub_string(RequestUri, _, 3, _, wms)
   )),
-  rdf_assert_triple(Map, rdf:type, mw:'Map'),
-  rdf_assert_triple(Map, rdfs:comment, string(Description)),
-  rdf_assert_triple(Map, rdfs:label, string(Title)),
-  rdf_assert_triple(Map, rdfs:seeAlso, uri(Map)),
-  rdf_assert_triple(Map, schema:dateCreated, year(Year)),
-  (assert_capabilities(RequestUri, Service) -> true ; throw(error(RequestUri))),
-  rdf_assert_triple(Map, wms:serviceDescription, Service).
+  assert_triple(B, Map, rdf:type, def:'Map'),
+  assert_triple(B, Map, rdfs:comment, string(Description)),
+  assert_triple(B, Map, rdfs:label, string(Title)),
+  assert_triple(B, Map, rdfs:seeAlso, uri(Map)),
+  assert_triple(B, Map, schema:dateCreated, year(Year)),
+  (assert_capabilities(B, RequestUri, Service) -> true ; throw(error(RequestUri))),
+  assert_triple(B, Map, wms:serviceDescription, Service).
 
 year(N) -->
   keyword, ":", whites,

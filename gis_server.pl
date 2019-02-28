@@ -16,10 +16,12 @@ EPSG:3395, and EPSG:4326.
 :- use_module(library(apply)).
 :- use_module(library(http/http_dispatch)).
 
-:- use_module(library(gis/wkt)).
+:- use_module(library(geo/wkt)).
 :- use_module(library(html/html_ext)).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/js_write)).
+:- use_module(library(http/rest_server)).
+:- use_module(library(semweb/rdf_api)).
 :- use_module(library(semweb/rdf_mem)).
 :- use_module(library(semweb/rdf_prefix)).
 :- use_module(library(semweb/rdf_term)).
@@ -35,7 +37,7 @@ http:media_types(home_handler, [media(text/html,[])]).
      'EPSG'-'http://www.opengis.net/def/crs/EPSG/0/',
      geo,
      rdfs,
-     wms-'https://demo.triply.cc/ogc/wms/def/'
+     wms-'https://triply.cc/ogc/wms/def/'
    ]).
 
 home_handler(Request) :-
@@ -49,7 +51,7 @@ home_media_type(media(text/html,_)) :-
   html_page([\home_head], [\home_body]).
 
 home_body -->
-  {map_layers('http://warper.erfgoedleiden.nl/maps/629', Service, Layers)},
+  {map_layers(_, 'http://warper.erfgoedleiden.nl/maps/629', Service, Layers)},
   html([
     h1("Welcome to the GIS test server"),
     div([id(mapid),style('width: 1800px; height: 800px;')], []),
@@ -96,9 +98,11 @@ map_layers(B, Map, Service, Layers) :-
 
 map_layer(B, Service, layer(LayerName,LayerTitle,point(X,Y))) :-
   tp(B, Service, wms:layer, Layer),
-  tp_value(B, Layer, wms:name, LayerName),
-  LayerName \== "MapWarper",
-  tp_value(Layer, rdfs:label, LayerTitle),
+  tp(B, Layer, wms:name, LayerLiteral1),
+  rdf_literal_lexical_form(LayerLiteral1, LayerName),
+  LayerName \== 'MapWarper',
+  tp(B, Layer, rdfs:label, LayerLiteral2),
+  rdf_literal_lexical_form(LayerLiteral2, LayerTitle),
   tp(B, Layer, geo:hasGeometry, Geo),
   tp(B, Geo, wms:crs, 'EPSG':'4326'),
   tp(B, Geo, geo:asWKT, literal(type(geo:wktLiteral,Lex))),
