@@ -1,21 +1,7 @@
-:- module(
-  map_warper,
-  [
-    assert_maps/1 % +Uri
-  ]
-).
-
-/** <module> MapWarper scraper
-
-The following URIs can be used for testing:
-
-  - http://maps.nypl.org/warper/
-  - http://warper.erfgoedleiden.nl/
-
----
+/* MapWarper scraper
 
 @author Wouter Beek
-@version 2018-10-11
+@version 2018-10-11, 2021-01-09
 */
 
 :- use_module(library(apply)).
@@ -25,11 +11,11 @@ The following URIs can be used for testing:
 :- use_module(library(xpath)).
 
 :- use_module(library(dcg)).
-:- use_module(library(http/http_client2)).
-:- use_module(library(semweb/rdf_api)).
-:- use_module(library(semweb/rdf_mem)).
-:- use_module(library(semweb/rdf_prefix)).
-:- use_module(library(semweb/rdf_term)).
+:- use_module(library(http_client2)).
+:- use_module(library(rdf_api)).
+:- use_module(library(rdf_mem)).
+:- use_module(library(rdf_prefix)).
+:- use_module(library(rdf_term)).
 :- use_module(library(uri_ext)).
 
 :- use_module(wms).
@@ -37,7 +23,7 @@ The following URIs can be used for testing:
 :- curl.
 
 :- maplist(rdf_register_prefix, [
-     def-'https://triply.cc/open-geo-metadata/def/',
+     def-'https://druid.datalegend.net/IISG/historic-maps/def/',
      rdf
    ]).
 
@@ -45,26 +31,55 @@ The following URIs can be used for testing:
 
 
 
-%! assert_maps(+Uri:atom) is nondet.
+%! run is det.
 
-assert_maps(Uri) :-
+run :-
+  forall(
+    site(Name, Uri),
+    run(Name, Uri)
+  ).
+
+
+%! run(+Name:atom, +Uri:atom) is nondet.
+
+run(Name, Uri) :-
   uri_comps(Uri, uri(Scheme,Auth,Segments1,_,_)),
   append_segments(Segments1, [maps], Segments2),
   between(1, inf, N),
   uri_comps(BaseUri, uri(Scheme,Auth,Segments2,[page(N),per_page(100)],_)),
-  rdf_default_graph(G),
-  B = mem(G),
-  http_call(BaseUri, assert_maps(B, BaseUri), [accept(html)]).
+  rdf_create_dataset(
+    ['https://druid.datalegend.net/IISG/historic-maps/graphs/instances'],
+    Dataset
+  ),
+  http_call(BaseUri, assert_maps(Dataset, BaseUri), [accept(html)]),
+  atomic_list_concat([Name,nq,gz], '.', File),
+  rdf_save_file(File).
 
-assert_maps(B, BaseUri, In) :-
+
+
+%! site(+Name:atom, +Uri:uri) is semidet.
+%! site(+Name:atom, -Uri:uri) is det.
+%! site(-Name:atom, -Uri:uri) is multi.
+
+site(erfgoedleiden, 'http://warper.erfgoedleiden.nl/').
+site(mapwarper, 'https://mapwarper.net/').
+site(nypl, 'http://maps.nypl.org/warper/').
+
+
+
+assert_maps(Dataset, BaseUri, In) :-
   load_html(In, Dom, [space(remove)]),
-  xpath_chk(Dom, //div(@class=maplist_title), _), !,
-  xpath(Dom, //div(@class=maplist_title)/a(@href), RelUri),
-  uri_resolve(RelUri, BaseUri, Map),
-  uri_comp_set(fragment, Map, 'Exporteer_tab', ExportUri),
-  http_call(ExportUri, assert_map(B, Map), [accept(html)]).
+  xpath_chk(Dom, //div(@class=maplist_title), _),
+  forall(
+    xpath(Dom, //div(@class=maplist_title)/a(@href), RelUri),
+    (
+      uri_resolve(RelUri, BaseUri, Map),
+      uri_comp_set(fragment, Map, 'Exporteer_tab', ExportUri),
+      http_call(ExportUri, assert_map(Dataset, Map), [accept(html)])
+    )
+  ).
 
-assert_map(B, Map, In) :-
+assert_map(Dataset, Map, In) :-
   load_html(In, Dom, [space(remove)]),
   xpath_chk(Dom, //span(@class=maplist_title,normalize_space), Title),
   xpath_chk(Dom, //span(@class=map_description,normalize_space), Description),
@@ -74,13 +89,13 @@ assert_map(B, Map, In) :-
     xpath(Dom, //ul/li/a(@href), RequestUri),
     sub_string(RequestUri, _, 3, _, wms)
   )),
-  assert_triple(B, Map, rdf:type, def:'Map'),
-  assert_triple(B, Map, rdfs:comment, string(Description)),
-  assert_triple(B, Map, rdfs:label, string(Title)),
-  assert_triple(B, Map, rdfs:seeAlso, uri(Map)),
-  assert_triple(B, Map, schema:dateCreated, year(Year)),
-  (assert_capabilities(B, RequestUri, Service) -> true ; throw(error(RequestUri))),
-  assert_triple(B, Map, wms:serviceDescription, Service).
+  assert_instance(Map, def:'Map', Dataset),
+  assert_triple(Map, rdfs:comment, string(Description), Dataset),
+  assert_label(Map, string(Title), Dataset),
+  assert_triple(Map, rdfs:seeAlso, uri(Map), Dataset),
+  assert_triple(Map, sdo:dateCreated, year(Year), Dataset),
+  (assert_capabilities(Dataset, RequestUri, Service) -> true ; throw(error(RequestUri))),
+  assert_triple(Map, wms:serviceDescription, Service, Dataset).
 
 year(N) -->
   keyword, ":", whites,

@@ -6,32 +6,33 @@ Leaflet supports the following CRSes: CRS:3857, CRS:3395, and
 CRS:4326.  I don't think that these exist; maybe they are EPSG:3857,
 EPSG:3395, and EPSG:4326.
 
----
-
 @author Wouter Beek
-@version 2018-10-13
+@version 2018-10-13, 2021-01-09
 */
 
 :- use_module(library(aggregate)).
 :- use_module(library(apply)).
-:- use_module(library(http/http_dispatch)).
-
-:- use_module(library(geo/wkt)).
-:- use_module(library(html/html_ext)).
-:- use_module(library(http/http_server)).
 :- use_module(library(http/js_write)).
-:- use_module(library(http/rest_server)).
-:- use_module(library(semweb/rdf_api)).
-:- use_module(library(semweb/rdf_mem)).
-:- use_module(library(semweb/rdf_prefix)).
-:- use_module(library(semweb/rdf_term)).
+:- use_module(library(http/http_dispatch)).
+:- use_module(library(http/http_server)).
+:- use_module(library(settings)).
+
+:- use_module(library(html_ext)).
+:- use_module(library(rdf_api)).
+:- use_module(library(rdf_mem)).
+:- use_module(library(rdf_prefix)).
+:- use_module(library(rdf_term)).
+:- use_module(library(rest_server)).
+:- use_module(library(wkt)).
 
 :- http_handler(/, home_handler, [methods([get,head,options])]).
 
 http:media_types(home_handler, [media(text/html,[])]).
 
 :- initialization
-   rdf_load_file('wms.nt.gz').
+   rdf_load_file('wms.nt.gz', [graph(Graph)]),
+   create_dataset([Graph], [], Dataset),
+   set_setting(dataset, Dataset).
 
 :- maplist(rdf_register_prefix, [
      'EPSG'-'http://www.opengis.net/def/crs/EPSG/0/',
@@ -39,6 +40,8 @@ http:media_types(home_handler, [media(text/html,[])]).
      rdfs,
      wms-'https://triply.cc/ogc/wms/def/'
    ]).
+
+:- setting(dataset, any, _, "The dataset used by this web page.").
 
 home_handler(Request) :-
   rest_method(Request, home_method).
@@ -51,7 +54,7 @@ home_media_type(media(text/html,_)) :-
   html_page([\home_head], [\home_body]).
 
 home_body -->
-  {map_layers(_, 'http://warper.erfgoedleiden.nl/maps/629', Service, Layers)},
+  {map_layers('http://warper.erfgoedleiden.nl/maps/629', Service, Layers)},
   html([
     h1("Welcome to the GIS test server"),
     div([id(mapid),style('width: 1800px; height: 800px;')], []),
@@ -92,20 +95,19 @@ home_head -->
     ], [])
   ]).
 
-map_layers(B, Map, Service, Layers) :-
-  tp(B, Map, wms:serviceDescription, Service),
-  aggregate_all(set(Layer), map_layer(B, Service, Layer), Layers).
+map_layers(Map, Service, Layers) :-
+  setting(dataset, Dataset),
+  tp(Map, wms:serviceDescription, Service, Dataset),
+  aggregate_all(set(Layer), map_layer(Dataset, Service, Layer), Layers).
 
-map_layer(B, Service, layer(LayerName,LayerTitle,point(X,Y))) :-
-  tp(B, Service, wms:layer, Layer),
-  tp(B, Layer, wms:name, LayerLiteral1),
-  rdf_literal_lexical_form(LayerLiteral1, LayerName),
+map_layer(Dataset, Service, layer(LayerName,LayerTitle,point(X,Y))) :-
+  tp(Service, wms:layer, Layer, Dataset),
+  tp(Layer, wms:name, LayerName, Dataset),
   LayerName \== 'MapWarper',
-  tp(B, Layer, rdfs:label, LayerLiteral2),
-  rdf_literal_lexical_form(LayerLiteral2, LayerTitle),
-  tp(B, Layer, geo:hasGeometry, Geo),
-  tp(B, Geo, wms:crs, 'EPSG':'4326'),
-  tp(B, Geo, geo:asWKT, literal(type(geo:wktLiteral,Lex))),
+  tp_lexical_form(Layer, LayerTitle, Dataset),
+  tp(Layer, geo:hasGeometry, Geo, Dataset),
+  tp(Geo, wms:crs, 'EPSG':'4326', Dataset),
+  tp(Geo, geo:asWKT, literal(type(geo:wktLiteral,Lex)), Dataset),
   wkt_shape_atom(shape(_,_,_,Term), Lex),
   Term = 'Polygon'(['LineString'(['Point'([XMax,YMax]),_,'Point'([XMin,YMin]),_,_])]),
   X is (XMin+XMax)/2,
