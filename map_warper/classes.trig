@@ -1,0 +1,6 @@
+prefix def: <https://druid.datalegend.net/IISG/historic-maps/def/>
+
+def: {
+  def:Map
+    rdfs:subClassOf dcat:Resource.
+}

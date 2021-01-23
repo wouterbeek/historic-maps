@@ -1,0 +1,119 @@
+prefix dcat: <>
+prefix rdf: <>
+prefix rdfs: <>
+prefix sdo: <>
+prefix sh: <>
+prefix xsd: <>
+
+prefix shp: <https://triplydb.com/Triply/wms/shp/>
+prefix wms: <https://triplydb.com/Triply/wms/def/>
+
+shp: {
+  shp:Node
+    a sh:NodeShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:closed true;#
+    sh:ignoredProperties ( rdf:type );#
+    sh:property
+      shp:label;
+    sh:targetSubjectOf rdf:type.
+
+  shp:label
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype rdf:langString;#
+    sh:description "Every non-trivial node must have exactly one English human-readable label"@en;
+    sh:languageIn ( "en" );
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:name "has human-readable label"@en;
+    sh:nodeKind sh:Literal;#
+    sh:path rdfs:label;
+    sh:uniqueLang true.#
+
+
+  shp:BoundingBox
+    a sh:NodeShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:closed true;#
+    sh:ignoredProperties ( rdf:type );#
+    sh:property
+      shp:eastBoundLongitude,
+      shp:northBoundLongitude,
+      shp:southBoundLongitude,
+      shp:westBoundLongitude;
+    sh:targetClass wms:BoundingBox.
+
+  shp:eastBoundLongitude
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:double;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:Literal;#
+    sh:path wms:eastBoundLongitude.
+
+  shp:northBoundLongitude
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:double;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:Literal;#
+    sh:path wms:northBoundLongitude.
+
+  shp:southBoundLongitude
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:double;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:Literal;#
+    sh:path wms:southBoundLongitude.
+
+  shp:westBoundLongitude
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:double;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:Literal;#
+    sh:path wms:westBoundLongitude.
+
+
+  shp:Layer
+    a sh:NodeShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:closed true;#
+    sh:ignoredProperties ( rdf:type );#
+    sh:property
+      shp:crs,
+      shp:name;
+    sh:targetClass wms:Layer.
+
+  shp:crs
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class wms:Crs;
+    sh:minCount 1;
+    sh:nodeKind sh:IRI;#
+    sh:path wms:crs.
+
+  shp:name
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:string;#
+    sh:maxCount 1;
+    sh:name "has name"@en;
+    sh:nodeKind sh:Literal;#
+    sh:path sdo:name.
+
+
+  shp:Service
+    a sh:NodeShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:closed true;#
+    sh:ignoredProperties ( rdf:type );#
+    sh:property
+    sh:targetClass wms:Service.
+}

@@ -1,7 +1,9 @@
+#!/usr/bin/env swipl
+
 /* MapWarper scraper
 
 @author Wouter Beek
-@version 2018-10-11, 2021-01-09
+@version 2018-10, 2021-01
 */
 
 :- use_module(library(apply)).
@@ -18,22 +20,16 @@
 :- use_module(library(rdf_term)).
 :- use_module(library(uri_ext)).
 
-:- use_module(wms).
+:- load_files('../wms/wms.pl').
 
-:- curl.
+:- initialization(main, main).
 
 :- maplist(rdf_register_prefix, [
      def-'https://druid.datalegend.net/IISG/historic-maps/def/',
      rdf
    ]).
 
-
-
-
-
-%! run is det.
-
-run :-
+main :-
   forall(
     site(Name, Uri),
     run(Name, Uri)
@@ -47,10 +43,9 @@ run(Name, Uri) :-
   append_segments(Segments1, [maps], Segments2),
   between(1, inf, N),
   uri_comps(BaseUri, uri(Scheme,Auth,Segments2,[page(N),per_page(100)],_)),
-  rdf_create_dataset(
-    ['https://druid.datalegend.net/IISG/historic-maps/graphs/instances'],
-    Dataset
-  ),
+  atom_concat('https://druid.datalegend.net/IISG/historic-maps/graphs/', Name, GraphName),
+  rdf_create_graph(GraphName),
+  dataset(GraphName, Dataset),
   http_call(BaseUri, assert_maps(Dataset, BaseUri), [accept(html)]),
   atomic_list_concat([Name,nq,gz], '.', File),
   rdf_save_file(File).

@@ -1,0 +1,21 @@
+prefix geo: <>
+prefix owl: <>
+prefix rdfs: <>
+
+prefix wms: <https://triplydb.com/Triply/wms/def/>
+
+wms: {
+  wms:BoundingBox
+    a owl:Class;#
+    rdfs:comment "The bounding coordinates of the maximum geospatial extent in decimal degrees."@en;
+    rdfs:label "Bounding box"@en;
+    rdfs:subClassOf geo:Geometry.
+
+  wms:Layer
+    rdfs:label "Layer"@en;
+    rdfs:subClassOf rdfs:Resource.
+
+  wms:Service
+    rdfs:label "WMS service"@en;
+    rdfs:subClassOf dcat:Service.
+}

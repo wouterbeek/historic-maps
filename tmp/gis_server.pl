@@ -30,8 +30,7 @@ EPSG:3395, and EPSG:4326.
 http:media_types(home_handler, [media(text/html,[])]).
 
 :- initialization
-   rdf_load_file('wms.nt.gz', [graph(Graph)]),
-   create_dataset([Graph], [], Dataset),
+   rdf_load_file('wms.nt.gz', Dataset),
    set_setting(dataset, Dataset).
 
 :- maplist(rdf_register_prefix, [
