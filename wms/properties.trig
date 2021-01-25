@@ -1,20 +1,15 @@
+prefix dct: <http://purl.org/dc/terms/>
 prefix owl: <http://www.w3.org/2002/07/owl#>
 prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 prefix wms: <https://triplydb.com/Triply/wms/def/>
 
 wms: {
-  wms:crs
-    a owl:ObjectProperty;
-    rdfs:domain wms:Layer;
+  wms:exceptionFormat
+    a owl:DatatypeProperty;
+    rdfs:comment "The media types in which the WMS service is able to return exception messages."@en;
+    rdfs:domain wms:Service;
     rdfs:isDefinedBy wms:;#
-    rdfs:label "has CRS"@en;
-    rdfs:range wms:Crs.
-
-  wms:exBBox
-    a owl:ObjectProperty;
-    rdfs:domain wms:Layer;
-    rdfs:isDefinedBy wms:;#
-    rdfs:label "has bounding box"@en;
-    rdfs:range wms:BoundingBox.
+    rdfs:label "has exception format"@en;
+    rdfs:range dct:MediaType.
 }

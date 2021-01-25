@@ -57,6 +57,7 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
      mediaType-'https://triplydb.com/Triply/tmt/id/',
      rdfs,
      sdo,
+     tg-'https://triplydb.com/Triply/tg/def/',
      tv-'https://triplydb.com/Triply/tv/def/',
      wms-'https://triplydb.com/Triply/wms/def/'
    ]).
@@ -194,44 +195,43 @@ assert_bbox(Dataset, Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
   include(ground, [XMax,YMax,XMin,YMin,XRes,YRes], L),
   rdf_hash_iri(bbox, CrsTerm-L, BBox),
   assert_triple(Layer, geo:hasGeometry, BBox, Dataset),
-  assert_instance(BBox, wms:'BoundingBox', Dataset),
+  assert_instance(BBox, tg:'BoundingBox', Dataset),
   rdf_equal('CRS':'84', Crs),
+  Shape = shape(
+    false,
+    false,
+    Crs,
+    'Polygon'([
+      'LineString'([
+        'Point'([XMax,YMax]),
+        'Point'([XMax,YMin]),
+        'Point'([XMin,YMin]),
+        'Point'([XMin,YMax]),
+        'Point'([XMax,YMax])
+      ])
+    ])
+  ),
   (   skip_polygon(XMax, YMax, XMax, YMin, XMin, YMin, XMin, YMax, XMax, YMax)
   ->  true
-  ;   assert_triple(
-        BBox,
-        geo:asWKT,
-        shape(
-          false,
-          false,
-          Crs,
-          'Polygon'([
-            'LineString'([
-              'Point'([XMax,YMax]),
-              'Point'([XMax,YMin]),
-              'Point'([XMin,YMin]),
-              'Point'([XMin,YMax]),
-              'Point'([XMax,YMax])
-            ])
-          ])
-        ),
-        Dataset
-      )
+  ;   (abs(YMax - YMin) > 50 -> rdf_object_dwim(Shape, Term), writeln(Term) ; true),
+      assert_triple(BBox, geo:asWKT, Shape, Dataset)
   ),
-  (var(XRes) -> true ; assert_triple(BBox, wms:resolutionX, string(XRes), Dataset)),
-  (var(YRes) -> true ; assert_triple(BBox, wms:resolutionY, string(YRes), Dataset)),
+  (var(XRes) -> true ; assert_triple(BBox, tg:resolutionX, string(XRes), Dataset)),
+  (var(YRes) -> true ; assert_triple(BBox, tg:resolutionY, string(YRes), Dataset)),
   assert_crs_term(Dataset, BBox, CrsTerm).
 
 skip_polygon(-75.9923, 3347.04, -75.9923, 25.592, -7261.93, 25.592, -7261.93, 3347.04, -75.9923, 3347.04).
 skip_polygon(0.78581, 112.57, 0.78581, -18.2331, -208.262, -18.2331, -208.262, 112.57, 0.78581, 112.57).
-skip_polygon(92.0387, 61.3577, 92.0387, 28.9605, -398.402, 28.9605, -398.402, 61.3577, 92.0387, 61.3577).
 skip_polygon(144.888, 105.14, 144.888, -98.8381, -174.992, -98.8381, -174.992, 105.14, 144.888, 105.14).
 skip_polygon(158.99, 102.254, 158.99, -102.104, -271.622, -102.104, -271.622, 102.254, 158.99, 102.254).
 skip_polygon(162.564, 93.9454, 162.564, -99.6109, -164.214, -99.6109, -164.214, 93.9454, 162.564, 93.9454).
+skip_polygon(180, 90, 180, -90, -180, -90, -180, 90, 180, 90).
 skip_polygon(199.385, 126.574, 199.385, -84.2338, -194.016, -84.2338, -194.016, 126.574, 199.385, 126.574).
 skip_polygon(214.616, 113.254, 214.616, -150.897, -199.801, -150.897, -199.801, 113.254, 214.616, 113.254).
 skip_polygon(233.267, 127.447, 233.267, -88.6602, -39.7652, -88.6602, -39.7652, 127.447, 233.267, 127.447).
 skip_polygon(238.159, 164.4, 238.159, -362.562, -394.629, -362.562, -394.629, 164.4, 238.159, 164.4).
+skip_polygon(85.3485, 348.84, 85.3485, -54.4906, -149.221, -54.4906, -149.221, 348.84, 85.3485, 348.84).
+skip_polygon(92.0387, 61.3577, 92.0387, 28.9605, -398.402, 28.9605, -398.402, 61.3577, 92.0387, 61.3577).
 
 %! wms_bbox(+Version:compound,
 %!          +LayerDom:compound,
@@ -352,7 +352,7 @@ assert_capabilities_stream(Dataset, Service, RequestUri, In) :-
 
 assert_contact_information(Dataset, ContactInformationDom, Service) :-
   rdf_hash_iri(contact, ContactInformationDom, Contact),
-  assert_triple(Service, wms:contact, Contact, Dataset),
+  assert_triple(Service, dcat:contactPoint, Contact, Dataset),
   assert_instance(Contact, wms:'Contact', Dataset),
   % /ContactAddress
   (   xpath_chk(ContactInformationDom, //'ContactAddress'(content), ContactAddressDom)
@@ -362,7 +362,7 @@ assert_contact_information(Dataset, ContactInformationDom, Service) :-
       xpath_chk(ContactAddressDom, //'AddressType'(normalize_space), Type),
       assert_triple(Address, wms:addressType, string(Type), Dataset),
       xpath_chk(ContactAddressDom, //'Address'(normalize_space), AddressString),
-      assert_triple(Address, wms:address, string(AddressString), Dataset),
+      assert_triple(Address, sdo:address, string(AddressString), Dataset),
       xpath_chk(ContactAddressDom, //'City'(normalize_space), City),
       assert_triple(Address, wms:city, string(City), Dataset),
       xpath_chk(ContactAddressDom, //'StateOrProvince'(normalize_space), StateOrProvince),
@@ -380,7 +380,8 @@ assert_contact_information(Dataset, ContactInformationDom, Service) :-
   ),
   % /ContactPersonPrimary
   (   xpath_chk(ContactInformationDom, //'ContactPersonPrimary'(content), ContactPersonDom)
-  ->  rdf_hash_iri(person, ContactPersonDom, Person),
+  ->  gtrace,
+      rdf_hash_iri(person, ContactPersonDom, Person),
       assert_instance(Person, sdo:'Person', Dataset),
       assert_triple(Contact, wms:primaryPerson, Person, Dataset),
       xpath_chk(ContactPersonDom, //'ContactPerson'(normalize_space), Name),
@@ -441,7 +442,7 @@ assert_crs_term(Dataset, Iri, label(Namespace,Code)) :- !,
 assert_crs_term(Dataset, Iri, label(Namespace,Code,_)) :- !,
   assert_crs_term(Dataset, Iri, label(Namespace,Code)).
 assert_crs_term(Dataset, Iri, uri(Crs)) :-
-  assert_triple(Iri, wms:crs, Crs, Dataset).
+  assert_triple(Iri, tg:crs, Crs, Dataset).
 
 
 
@@ -456,10 +457,10 @@ assert_ex_bbox(Dataset, Version, LayerDom, Parent, Layer, [E,N,S,W]) :-
   'EX_GeographicBoundingBox'(Version, LayerDom, Parent, [E,N,S,W]),%ex_bbox
   atomic_list_concat([E,N,S,W], '_', ExBBoxLocal),
   rdf_prefix_iri(bbox, ExBBoxLocal, ExBBox),
-  assert_instance(ExBBox, wms:'GeographicBoundingBox', Dataset),
+  assert_instance(ExBBox, tg:'BoundingBox', Dataset),
   format(string(ExBBoxLabel), "East: ~f, North: ~f, South: ~f, West: ~f", [E,N,S,W]),
   assert_label(ExBBox, string(ExBBoxLabel), Dataset),
-  assert_triple(Layer, wms:exBBox, ExBBox, Dataset),
+  assert_triple(Layer, tg:boundingBox, ExBBox, Dataset),
   assert_triple(ExBBox, wms:eastBoundLongitude, E, Dataset),
   assert_triple(ExBBox, wms:northBoundLongitude, N, Dataset),
   assert_triple(ExBBox, wms:westBoundLongitude, W, Dataset),
@@ -520,7 +521,7 @@ assert_media_type(Dataset, S, P, media(Supertype/Subtype,_)) :-
 assert_keywords(Dataset, Dom, Iri) :-
   forall(
     xpath(Dom, //'KeywordList'//'Keyword'(normalize_space), Keyword),
-    assert_triple(Iri, wms:keyword, string(Keyword), Dataset)
+    assert_triple(Iri, dcat:keyword, string(Keyword), Dataset)
   ).
 
 
@@ -557,9 +558,9 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   split_string(LayerTitle, " \n\t", " \n\t", Atoms),
   atomic_list_concat(Atoms, -, LayerLocal),
   rdf_prefix_iri(layer, LayerLocal, Layer),
-  assert_instance(Layer, wms:'Layer', Dataset),
+  assert_instance(Layer, tg:'Layer', Dataset),
   assert_label(Layer, string(LayerTitle), Dataset),
-  assert_triple(Service, wms:layer, Layer, Dataset),
+  assert_triple(Service, tg:layer, Layer, Dataset),
   % /KeywordList (optional, not inherited)
   %
   % A list of keywords or keyword phrases describing each layer should
@@ -677,13 +678,7 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   % MetadataURL elements are not inherited by child Layers.
   forall(
     xpath(LayerDom, //'MetadataURL'(@type(string)=MetadataType,content), MetadataDom),
-    (
-      xpath_chk(MetadataDom, /'OnlineResource'(@'xlink:href'), MetadataURL),
-      assert_triple(Layer, wms:metadataURL, MetadataURL, Dataset),
-      assert_instance(MetadataURL, wms:'MetadataURL', Dataset),
-      assert_formats(Dataset, MetadataDom, MetadataURL),
-      assert_triple(MetadataURL, wms:type, string(MetadataType), Dataset)
-    )
+    assert_metadata_url(Dataset, Layer, MetadataType, MetadataDom)
   ),
   % /MaxScaleDenominator (optional, default inheritance)
   % /MinScaleDenominator (optional, default inheritance)
@@ -704,11 +699,13 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   % otherwise poorly suited for display; the server shall not respond
   % with a service exception.
   (   'MaxScaleDenominator'(LayerDom, Parent, MaxScaleDenominator)
-  ->  assert_triple(Layer, wms:maxScaleDenominator, integer(MaxScaleDenominator), Dataset)
+  ->  gtrace,
+      assert_triple(Layer, wms:maxScaleDenominator, integer(MaxScaleDenominator), Dataset)
   ;   true
   ),
   (   'MinScaleDenominator'(LayerDom, Parent, MinScaleDenominator)
-  ->  assert_triple(Layer, wms:minScaleDenominator, integer(MinScaleDenominator), Dataset)
+  ->  gtrace,
+      assert_triple(Layer, wms:minScaleDenominator, integer(MinScaleDenominator), Dataset)
   ;   true
   ),
   Self = layer{
@@ -735,7 +732,8 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   %
   % @tbd LogoURL
   (   xpath_chk(LayerDom, //'Attribution'(content), AttributionDom)
-  ->  % /OnlineResource
+  ->  gtrace,
+      % /OnlineResource
       (   xpath_chk(
             AttributionDom,
             //'OnlineResource'(normalize_space),
@@ -799,6 +797,17 @@ assert_legend(Dataset, LegendDom, Style) :-
   ->  assert_triple(Legend, wms:width, positive_integer(Width), Dataset)
   ;   true
   ).
+
+
+
+%! assert_metadata_url(+Dataset:dataset, +Layer:iri, +MetadataType:atom, +MetadataDom:compound) is det.
+
+assert_metadata_url(Dataset, Layer, MetadataType, MetadataDom) :-
+  xpath_chk(MetadataDom, /'OnlineResource'(@'xlink:href'), MetadataUrl),
+  assert_triple(Layer, wms:metadataURL, MetadataUrl, Dataset),
+  assert_instance(MetadataUrl, wms:'MetadataURL', Dataset),
+  assert_formats(Dataset, MetadataDom, MetadataUrl),
+  assert_triple(MetadataUrl, wms:type, string(MetadataType), Dataset).
 
 
 
@@ -872,7 +881,8 @@ assert_service(Dataset, ServiceDom, Service) :-
   xpath_chk(ServiceDom, //'ContactInformation'(content), ContactInformationDom),
   (   ContactInformationDom == []
   ->  true
-  ;   assert_contact_information(Dataset, ContactInformationDom, Service)
+  ;   gtrace,
+      assert_contact_information(Dataset, ContactInformationDom, Service)
   ),
   % /LayerLimit
   %
@@ -881,7 +891,8 @@ assert_service(Dataset, ServiceDom, Service) :-
   % is permitted to include in a single GetMap request.  If this
   % element is absent, the server imposes no limit.
   (   xpath_chk(ServiceDom, //'LayerLimit'(number), MaxLayers)
-  ->  assert_triple(Service, wms:layerLimit, positive_integer(MaxLayers), Dataset)
+  ->  gtrace,
+      assert_triple(Service, wms:layerLimit, positive_integer(MaxLayers), Dataset)
   ;   true
   ),
   % /MaxHeight
@@ -893,11 +904,13 @@ assert_service(Dataset, ServiceDom, Service) :-
   % GetMap request.  If either element is absent the server imposes no
   % limit on the corresponding parameter.
   (   xpath_chk(ServiceDom, //'MaxHeight'(number), MaxHeight)
-  ->  assert_triple(Service, wms:maxHeight, positive_integer(MaxHeight), Dataset)
+  ->  gtrace,
+      assert_triple(Service, wms:maxHeight, positive_integer(MaxHeight), Dataset)
   ;   true
   ),
   (   xpath_chk(ServiceDom, //'MaxWidth'(number), MaxWidth)
-  ->  assert_triple(Service, wms:maxWidth, positive_integer(MaxWidth), Dataset)
+  ->  gtrace,
+      assert_triple(Service, wms:maxWidth, positive_integer(MaxWidth), Dataset)
   ;   true
   ),
   % /AccessConstraints
@@ -913,11 +926,13 @@ assert_service(Dataset, ServiceDom, Service) :-
   % of these elements, but client applications may display the content
   % for user information and action.
   (   xpath_chk(ServiceDom, //'AccessConstraints'(normalize_space), AccessConstraints)
-  ->  assert_triple(Service, wms:accessConstraints, string(AccessConstraints), Dataset)
+  ->  gtrace,
+      assert_triple(Service, wms:accessConstraints, string(AccessConstraints), Dataset)
   ;   true
   ),
   (   xpath_chk(ServiceDom, //'Fees'(normalize_space), ServiceFees)
-  ->  assert_triple(Service, wms:fees, string(ServiceFees), Dataset)
+  ->  gtrace,
+      assert_triple(Service, wms:fees, string(ServiceFees), Dataset)
   ;   true
   ).
 
@@ -929,6 +944,7 @@ assert_service(Dataset, ServiceDom, Service) :-
 %!              -Style:iri) is semidet.
 
 assert_style(Dataset, StyleDom, Layer, Style) :-
+  gtrace,
   % /Name
   % /Title
   %
@@ -949,7 +965,7 @@ assert_style(Dataset, StyleDom, Layer, Style) :-
   (instance(Style, wms:'Style', Dataset) -> gtrace ; true),%DEB
   assert_triple(Layer, wms:style, Style, Dataset),
   assert_instance(Style, wms:'Style', Dataset),
-  assert_triple(Style, wms:name, string(StyleName), Dataset),
+  assert_triple(Style, sdo:name, string(StyleName), Dataset),
   xpath_chk(StyleDom, /'Title'(normalize_space), StyleTitle),
   assert_label(Style, string(StyleTitle), Dataset),
   % /Abstract
@@ -965,7 +981,8 @@ assert_style(Dataset, StyleDom, Layer, Style) :-
   % <LegendURL> contains the location of an image of a map legend
   % appropriate to the enclosing style.
   (   xpath_chk(StyleDom, /'LegendURL', LegendDom)
-  ->  assert_legend(Dataset, LegendDom, Style)
+  ->  gtrace,
+      assert_legend(Dataset, LegendDom, Style)
   ;   true
   ).
 

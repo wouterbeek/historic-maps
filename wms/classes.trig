@@ -1,39 +1,13 @@
-prefix dcat: <http://www.w3.org/ns/dcat#>
-prefix geo: <http://www.opengis.net/ont/geosparql#>
 prefix owl: <http://www.w3.org/2002/07/owl#>
 prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
+prefix tg: <https://triplydb.com/Triply/tg/def/>
 prefix wms: <https://triplydb.com/Triply/wms/def/>
 
 wms: {
-  wms:BoundingBox
-    a owl:Class;#
-    rdfs:comment "The bounding coordinates of the maximum geospatial extent in decimal degrees."@en;
-    rdfs:label "Bounding box"@en;
-    rdfs:subClassOf geo:Geometry.
-
-
-  wms:GeographicBoundingBox
-    a owl:Class;#
-    rdfs:label "Geographic bounding box"@en;
-    rdfs:subClassOf wms:BoundingBox.
-
-
-  wms:Layer
-    a owl:Class;#
-    rdfs:label "Layer"@en;
-    rdfs:subClassOf rdfs:Resource.
-
-
-  wms:Map
-    a owl:Class;#
-    rdfs:comment "A WMS map is a geospatial dataset that can be accessed through a WMS service."@en;
-    rdfs:label "WMS map"@en;
-    rdfs:subClassOf dcat:Dataset.
-
-
   wms:Service
     a owl:Class;#
+    rdfs:isDefinedBy wms:;#
     rdfs:label "WMS service"@en;
-    rdfs:subClassOf dcat:Service.
+    rdfs:subClassOf tg:GeoService.
 }
