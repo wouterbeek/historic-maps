@@ -1,5 +1,5 @@
-prefix owl: <>
-prefix rdfs: <>
+prefix owl: <http://www.w3.org/2002/07/owl#>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 prefix wms: <https://triplydb.com/Triply/wms/def/>
 
@@ -10,4 +10,11 @@ wms: {
     rdfs:isDefinedBy wms:;#
     rdfs:label "has CRS"@en;
     rdfs:range wms:Crs.
+
+  wms:exBBox
+    a owl:ObjectProperty;
+    rdfs:domain wms:Layer;
+    rdfs:isDefinedBy wms:;#
+    rdfs:label "has bounding box"@en;
+    rdfs:range wms:BoundingBox.
 }

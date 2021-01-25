@@ -23,7 +23,7 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 ---
 
 @author Wouter Beek
-@version 2018-10-14, 2021-01-09
+@version 2018-10-14, 2021-01
 */
 
 :- use_module(library(aggregate)).
@@ -50,20 +50,15 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 
 :- maplist(rdf_register_prefix, [
      'AUTO2'-'http://www.opengis.net/def/crs/OGC/1.3/AUTO',
-     address-'https://triply.cc/ogc/wms/id/address/',
-     bbox-'https://triply.cc/ogc/wms/id/bbox/',
      'CRS'-'http://www.opengis.net/def/crs/OGC/1.3/CRS',
-     contact-'https://triply.cc/ogc/wms/id/contact/',
+     dcat,
      'EPSG'-'http://www.opengis.net/def/crs/EPSG/0/',
      geo,
-     layer-'https://triply.cc/ogc/wms/id/layer/',
-     mediaType-'https://triply.cc/ogc/wms/id/mediaType/',
-     person-'https://triply.cc/ogc/wms/id/person/',
+     mediaType-'https://triplydb.com/Triply/tmt/id/',
+     rdfs,
      sdo,
-     style-'https://triply.cc/ogc/wms/id/style/',
-     sv-'https://triply.cc/ogc/sv/def/',
-     version-'https://triply.cc/ogc/wms/id/version/',
-     wms-'https://triply.cc/ogc/wms/def/'
+     tv-'https://triplydb.com/Triply/tv/def/',
+     wms-'https://triplydb.com/Triply/wms/def/'
    ]).
 
 
@@ -76,16 +71,20 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
 % supported by the server.
 
 assert_capabilities(Dataset, RequestUri1, Service) :-
-  uri_strip(RequestUri1, Service),
+  uri_local_name(RequestUri1, Local),
+  rdf_create_iri(service, Local, Service),
+  assert_instance(Service, wms:'Service', Dataset),
+  assert_triple(Service, rdfs:seeAlso, uri(RequestUri1), Dataset),
+  uri_strip(RequestUri1, ServiceUrl),
   uri_comp_set(
     query,
-    Service,
+    ServiceUrl,
     [request('GetCapabilities'),service('WMS')],
     RequestUri2
   ),
   http_call(
     RequestUri2,
-    assert_capabilities_stream(Dataset, Service),
+    assert_capabilities_stream(Dataset, Service, RequestUri2),
     [accept(media(application/'vnd.ogc.wms_xml',[charset('UTF-8')]))]
   ).
 
@@ -197,28 +196,42 @@ assert_bbox(Dataset, Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
   assert_triple(Layer, geo:hasGeometry, BBox, Dataset),
   assert_instance(BBox, wms:'BoundingBox', Dataset),
   rdf_equal('CRS':'84', Crs),
-  assert_triple(
-    BBox,
-    geo:asWKT,
-    shape(
-      false,
-      false,
-      Crs,
-      'Polygon'([
-        'LineString'([
-          'Point'([XMax,YMax]),
-          'Point'([XMax,YMin]),
-          'Point'([XMin,YMin]),
-          'Point'([XMin,YMax]),
-          'Point'([XMax,YMax])
-        ])
-      ])
-    ),
-    Dataset
+  (   skip_polygon(XMax, YMax, XMax, YMin, XMin, YMin, XMin, YMax, XMax, YMax)
+  ->  true
+  ;   assert_triple(
+        BBox,
+        geo:asWKT,
+        shape(
+          false,
+          false,
+          Crs,
+          'Polygon'([
+            'LineString'([
+              'Point'([XMax,YMax]),
+              'Point'([XMax,YMin]),
+              'Point'([XMin,YMin]),
+              'Point'([XMin,YMax]),
+              'Point'([XMax,YMax])
+            ])
+          ])
+        ),
+        Dataset
+      )
   ),
   (var(XRes) -> true ; assert_triple(BBox, wms:resolutionX, string(XRes), Dataset)),
   (var(YRes) -> true ; assert_triple(BBox, wms:resolutionY, string(YRes), Dataset)),
   assert_crs_term(Dataset, BBox, CrsTerm).
+
+skip_polygon(-75.9923, 3347.04, -75.9923, 25.592, -7261.93, 25.592, -7261.93, 3347.04, -75.9923, 3347.04).
+skip_polygon(0.78581, 112.57, 0.78581, -18.2331, -208.262, -18.2331, -208.262, 112.57, 0.78581, 112.57).
+skip_polygon(92.0387, 61.3577, 92.0387, 28.9605, -398.402, 28.9605, -398.402, 61.3577, 92.0387, 61.3577).
+skip_polygon(144.888, 105.14, 144.888, -98.8381, -174.992, -98.8381, -174.992, 105.14, 144.888, 105.14).
+skip_polygon(158.99, 102.254, 158.99, -102.104, -271.622, -102.104, -271.622, 102.254, 158.99, 102.254).
+skip_polygon(162.564, 93.9454, 162.564, -99.6109, -164.214, -99.6109, -164.214, 93.9454, 162.564, 93.9454).
+skip_polygon(199.385, 126.574, 199.385, -84.2338, -194.016, -84.2338, -194.016, 126.574, 199.385, 126.574).
+skip_polygon(214.616, 113.254, 214.616, -150.897, -199.801, -150.897, -199.801, 113.254, 214.616, 113.254).
+skip_polygon(233.267, 127.447, 233.267, -88.6602, -39.7652, -88.6602, -39.7652, 127.447, 233.267, 127.447).
+skip_polygon(238.159, 164.4, 238.159, -362.562, -394.629, -362.562, -394.629, 164.4, 238.159, 164.4).
 
 %! wms_bbox(+Version:compound,
 %!          +LayerDom:compound,
@@ -303,11 +316,11 @@ assert_capability(Dataset, Version, CapabilityDom, Service) :-
 
 %! assert_capabilities_stream(+Dataset:dataset,
 %!                            +Service:iri,
+%!                            +RequestUri:uri,
 %!                            +In:stream) is det.
 
-assert_capabilities_stream(Dataset, Service, In) :-
-  assert_instance(Service, wms:'Service', Dataset),
-  assert_triple(Service, wms:endpoint, uri(Service), Dataset),
+assert_capabilities_stream(Dataset, Service, RequestUri, In) :-
+  assert_triple(Service, dcat:endpointURL, uri(RequestUri), Dataset),
   load_xml(In, [Dom]),
   assert_version(Dataset, Dom, Service, Version),
   % /Service
@@ -468,7 +481,8 @@ assert_exceptions(Dataset, ExceptionDom, Service) :-
   maplist(assert_exception_format(Dataset, Service), Formats2).
 
 assert_exception_format(Dataset, Service, Format) :-
-  assert_triple(Service, wms:exceptionFormat, string(Format), Dataset).
+  rdf_create_iri(mediaType, Format, MediaType),
+  assert_triple(Service, wms:exceptionFormat, MediaType, Dataset).
 
 
 
@@ -478,22 +492,18 @@ assert_formats(Dataset, Dom, Iri) :-
   forall(
     xpath(Dom, //'Format'(normalize_space), Atom),
     (
-      assert_triple(Iri, wms:formatString, string(Atom), Dataset),
       atom_phrase(media_type(MediaType), Atom),
       (   known_format(MediaType)
-      ->  assert_media_type(Dataset, Iri, wms:format, MediaType)
+      ->  assert_media_type(Dataset, Iri, dct:format, MediaType)
       ;   domain_error(exception_format, MediaType)
       )
     )
   ).
 
 assert_media_type(Dataset, S, P, media(Supertype/Subtype,_)) :-
-  atomic_list_concat([Supertype,Subtype], -, Local),
+  atomic_list_concat([Supertype,Subtype], /, Local),
   rdf_prefix_iri(mediaType, Local, MediaType),
-  assert_triple(S, P, MediaType, Dataset),
-  assert_instance(MediaType, wms:'MediaType', Dataset),
-  assert_triple(MediaType, wms:supertype, string(Supertype), Dataset),
-  assert_triple(MediaType, wms:subtype, string(Subtype), Dataset).
+  assert_triple(S, P, MediaType, Dataset).
 
 
 
@@ -581,13 +591,14 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   %
   % The Name is not inherited by child Layers.
   (   xpath_chk(LayerDom, //'Name'(normalize_space), Name)
-  ->  assert_triple(Layer, wms:name, string(Name), Dataset)
+  ->  assert_triple(Layer, sdo:name, string(Name), Dataset)
   ;   true
   ),
   % /Abstract (optional, not inherited)
   %
   % Abstract is a narrative description of the map layer.
-  (   xpath_chk(LayerDom, //'Abstract'(normalize_space), Abstract)
+  (   xpath_chk(LayerDom, //'Abstract'(normalize_space), Abstract),
+      Abstract \== ''
   ->  assert_triple(Layer, rdfs:comment, string(Abstract), Dataset)
   ;   true
   ),
@@ -739,7 +750,7 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   ;   true
   ),
   (   dict_get(iri, Parent, ParentLayer)
-  ->  assert_triple(ParentLayer, wms:hasChild, Layer, Dataset)
+  ->  assert_triple(ParentLayer, geo:sfContains, Layer, Dataset)
   ;   true
   ),
   (   % If, and only if, a layer has a <Name>, then it is a map layer
@@ -834,7 +845,8 @@ assert_service(Dataset, ServiceDom, Service) :-
   %
   % The Abstract element allows a descriptive narrative providing more
   % information about the enclosing object.
-  (   xpath_chk(ServiceDom, //'Abstract'(normalize_space), ServiceAbstract)
+  (   xpath_chk(ServiceDom, //'Abstract'(normalize_space), ServiceAbstract),
+      ServiceAbstract \== ''
   ->  assert_triple(Service, rdfs:comment, string(ServiceAbstract), Dataset)
   ;   true
   ),
@@ -858,7 +870,10 @@ assert_service(Dataset, ServiceDom, Service) :-
   %
   % Contact Information should be included.
   xpath_chk(ServiceDom, //'ContactInformation'(content), ContactInformationDom),
-  assert_contact_information(Dataset, ContactInformationDom, Service),
+  (   ContactInformationDom == []
+  ->  true
+  ;   assert_contact_information(Dataset, ContactInformationDom, Service)
+  ),
   % /LayerLimit
   %
   % The optional <LayerLimit> element in the service metadata is a
@@ -940,7 +955,8 @@ assert_style(Dataset, StyleDom, Layer, Style) :-
   % /Abstract
   %
   % <Abstract> provides a narrative description.
-  (   xpath_chk(StyleDom, /'Abstract'(normalize_space), StyleAbstract)
+  (   xpath_chk(StyleDom, /'Abstract'(normalize_space), StyleAbstract),
+      StyleAbstract \== ''
   ->  assert_triple(Style, rdfs:comment, string(StyleAbstract), Dataset)
   ;   true
   ),
@@ -966,12 +982,12 @@ assert_version(Dataset, Dom, Service, Term) :-
   call_must_be(known_version, Term),
   Term = version(Major,Minor,Patch),
   rdf_prefix_iri(version, Atom, Version),
-  assert_triple(Service, sv:hasVersion, Version, Dataset),
-  assert_instance(Version, sv:'Version', Dataset),
+  assert_triple(Service, tv:version, Version, Dataset),
+  assert_instance(Version, tv:'SemanticVersion', Dataset),
   assert_label(Version, string(Atom), Dataset),
-  assert_triple(Version, sv:major, Major, Dataset),
-  assert_triple(Version, sv:minor, Minor, Dataset),
-  assert_triple(Version, sv:patch, Patch, Dataset).
+  assert_triple(Version, tv:major, Major, Dataset),
+  assert_triple(Version, tv:minor, Minor, Dataset),
+  assert_triple(Version, tv:patch, Patch, Dataset).
 
 % WMS 1.1.1
 wms_version_string(Dom, Atom) :-

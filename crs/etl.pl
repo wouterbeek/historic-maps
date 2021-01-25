@@ -15,7 +15,7 @@
 
 :- maplist(rdf_register_prefix, [
      graph-'https://triplydb.com/Triply/crs/graphs/',
-     wms-'https://triply.cc/ogc/wms/def/'
+     wms-'https://triply.cc/Triply/wms/def/'
    ]).
 
 main :-

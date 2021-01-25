@@ -1,24 +1,25 @@
-prefix dcat: <>
-prefix rdf: <>
-prefix rdfs: <>
-prefix sdo: <>
-prefix sh: <>
-prefix xsd: <>
+prefix dcat: <http://www.w3.org/ns/dcat#>
+prefix dct: <http://purl.org/dc/terms/>
+prefix owl: <http://www.w3.org/2002/07/owl#>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+prefix sdo: <https://schema.org/>
+prefix sh: <http://www.w3.org/ns/shacl#>
+prefix xsd: <http://www.w3.org/2001/XMLSchema#>
 
+prefix list: <https://triplydb.com/Triply/wms/id/list/>
 prefix shp: <https://triplydb.com/Triply/wms/shp/>
+prefix tmt: <https://triplydb.com/Triply/tmt/def/>
 prefix wms: <https://triplydb.com/Triply/wms/def/>
 
 shp: {
   shp:Node
     a sh:NodeShape;#
     rdfs:isDefinedBy shp:;#
-    sh:closed true;#
-    sh:ignoredProperties ( rdf:type );#
-    sh:property
-      shp:label;
-    sh:targetSubjectOf rdf:type.
+    sh:property shp:label;
+    sh:targetSubjectsOf rdf:type.
 
-  shp:label
+  shp:languageLabel
     a sh:PropertyShape;#
     rdfs:isDefinedBy shp:;#
     sh:datatype rdf:langString;#
@@ -26,17 +27,28 @@ shp: {
     sh:languageIn ( "en" );
     sh:maxCount 1;
     sh:minCount 1;
+    sh:minLength 1;#
     sh:name "has human-readable label"@en;
     sh:nodeKind sh:Literal;#
     sh:path rdfs:label;
     sh:uniqueLang true.#
+
+  shp:label
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sd:datatype xsd:string;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:minLength 1;#
+    sh:nodeKind sh:Literal;#
+    sh:path rdfs:label.
 
 
   shp:BoundingBox
     a sh:NodeShape;#
     rdfs:isDefinedBy shp:;#
     sh:closed true;#
-    sh:ignoredProperties ( rdf:type );#
+    sh:ignoredProperties list:type;#
     sh:property
       shp:eastBoundLongitude,
       shp:northBoundLongitude,
@@ -85,11 +97,20 @@ shp: {
     a sh:NodeShape;#
     rdfs:isDefinedBy shp:;#
     sh:closed true;#
-    sh:ignoredProperties ( rdf:type );#
+    sh:ignoredProperties list:type;#
     sh:property
+      shp:contains,
       shp:crs,
+      shp:geometry,
       shp:name;
     sh:targetClass wms:Layer.
+
+  shp:contains
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class wms:Layer;
+    sh:nodeKind sh:IRI;#
+    sh:path geo:sfContains.
 
   shp:crs
     a sh:PropertyShape;#
@@ -99,21 +120,145 @@ shp: {
     sh:nodeKind sh:IRI;#
     sh:path wms:crs.
 
+  shp:geometry
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class geo:Geometry;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:IRI;#
+    sh:path geo:hasGeometry.
+
   shp:name
     a sh:PropertyShape;#
     rdfs:isDefinedBy shp:;#
     sh:datatype xsd:string;#
     sh:maxCount 1;
+    sh:minLength 1;#
     sh:name "has name"@en;
     sh:nodeKind sh:Literal;#
     sh:path sdo:name.
+
+
+  shp:Map
+    a sh:NodeShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:closed true;#
+    sh:ignoredProperties list:type;#
+    sh:property
+      shp:service,
+      shp:temporalExtent,
+      shp:title;
+    sh:targetClass wms:Map.
+
+  shp:service
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class wms:Service;
+    sh:path
+      [ sh:inversePath sdo:servesDataset ].
+
+  shp:temporalExtent
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class time:ProperInterval;
+    sh:name "has temporal extent"@en;
+    sh:path dct:temporal.
+
+  shp:title
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:string;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:minLength 1;#
+    sh:nodeKind sh:Literal;#
+    sh:path dct:title.
 
 
   shp:Service
     a sh:NodeShape;#
     rdfs:isDefinedBy shp:;#
     sh:closed true;#
-    sh:ignoredProperties ( rdf:type );#
+    sh:ignoredProperties list:type;#
     sh:property
+      shp:endpointUrl,
+      shp:exceptionFormat,
+      shp:layer,
+      shp:seeAlso,
+      shp:servesDataset,
+      shp:version;
     sh:targetClass wms:Service.
+
+  shp:endpointUrl
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:anyURI;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:minLength 1;#
+    sh:name "has endpoint URL"@en;
+    sh:nodeKind sh:Literal;
+    sh:path dcat:endpointURL;
+
+  shp:exceptionFormat
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class tmt:MediaType;
+    sh:nodeKind sh:IRI;#
+    sh:path wms:exceptionFormat.
+
+  shp:format
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class tmt:MediaType;
+    sh:nodeKind sh:IRI;#
+    sh:path dct:format.
+
+  shp:layer
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class wms:Layer;
+    sh:minCount 1;
+    sh:nodeKind sh:IRI;#
+    sh:path wms:layer.
+
+  shp:seeAlso
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:datatype xsd:anyURI;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:Literal;#
+    sh:path rdfs:seeAlso.
+
+  shp:servesDataset
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class wms:Map;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:nodeKind sh:IRI;#
+    sh:path sdo:servesDataset.
+
+  shp:version
+    a sh:PropertyShape;#
+    rdfs:isDefinedBy shp:;#
+    sh:class tv:SemanticVersion;
+    sh:maxCount 1;
+    sh:minCount 1;
+    sh:name "has version"@en;
+    sh:nodeKind sh:IRI;#
+    sh:path tv:version.
+
+
+  list:type
+    a rdf:List;
+    rdf:first rdf:type;
+    rdf:rest rdf:nil;
+    rdfs:comment """
+<ol>
+  <li><a href="https://triplydb.com/w3c/rdf/browser?resource=http%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23type"><code>rdf:type</code></a></li>
+</ol>"""^^rdf:HTML;
+    rdfs:label "[rdf:type]".
 }

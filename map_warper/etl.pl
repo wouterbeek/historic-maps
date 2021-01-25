@@ -3,7 +3,7 @@
 /* MapWarper scraper
 
 @author Wouter Beek
-@version 2018-10, 2021-01
+@version 2018-10-14, 2021-01
 */
 
 :- use_module(library(apply)).
@@ -25,8 +25,23 @@
 :- initialization(main, main).
 
 :- maplist(rdf_register_prefix, [
+     address-'https://druid.datalegend.net/IISG/historic-maps/id/address/',
+     bbox-'https://druid.datalegend.net/IISG/historic-maps/id/bbox/',
+     catalog-'https://druid.datalegend.net/IISG/historic-maps/id/catalog/',
+     contact-'https://druid.datalegend.net/IISG/historic-maps/id/contact/',
+     dcat,
+     dct,
      def-'https://druid.datalegend.net/IISG/historic-maps/def/',
-     rdf
+     graph-'https://druid.datalegend.net/IISG/historic-maps/graphs/',
+     instant-'https://druid.datalegend.net/IISG/historic-maps/id/instant/',
+     interval-'https://druid.datalegend.net/IISG/historic-maps/id/interval/',
+     layer-'https://druid.datalegend.net/IISG/historic-maps/id/layer/',
+     person-'https://druid.datalegend.net/IISG/historic-maps/id/person/',
+     rdf,
+     service-'https://druid.datalegend.net/IISG/historic-maps/id/service/',
+     style-'https://druid.datalegend.net/IISG/historic-maps/id/style/',
+     time,
+     version-'https://druid.datalegend.net/IISG/historic-maps/id/version/'
    ]).
 
 main :-
@@ -43,12 +58,16 @@ run(Name, Uri) :-
   append_segments(Segments1, [maps], Segments2),
   between(1, inf, N),
   uri_comps(BaseUri, uri(Scheme,Auth,Segments2,[page(N),per_page(100)],_)),
-  atom_concat('https://druid.datalegend.net/IISG/historic-maps/graphs/', Name, GraphName),
+  rdf_create_iri(graph, Name, GraphName),
   rdf_create_graph(GraphName),
   dataset(GraphName, Dataset),
-  http_call(BaseUri, assert_maps(Dataset, BaseUri), [accept(html)]),
+  rdf_create_iri(catalog, Name, Catalog),
+  assert_instance(Catalog, dcat:'Catalog', Dataset),
+  assert_label(Catalog, string(Name), Dataset),
+  http_call(BaseUri, assert_maps(Dataset, Catalog, BaseUri), [accept(html)]),
   atomic_list_concat([Name,nq,gz], '.', File),
-  rdf_save_file(File).
+  rdf_save_file(File),
+  rdf_retract_graphs.
 
 
 
@@ -62,7 +81,7 @@ site(nypl, 'http://maps.nypl.org/warper/').
 
 
 
-assert_maps(Dataset, BaseUri, In) :-
+assert_maps(Dataset, Catalog, BaseUri, In) :-
   load_html(In, Dom, [space(remove)]),
   xpath_chk(Dom, //div(@class=maplist_title), _),
   forall(
@@ -70,11 +89,11 @@ assert_maps(Dataset, BaseUri, In) :-
     (
       uri_resolve(RelUri, BaseUri, Map),
       uri_comp_set(fragment, Map, 'Exporteer_tab', ExportUri),
-      http_call(ExportUri, assert_map(Dataset, Map), [accept(html)])
+      http_call(ExportUri, assert_map(Dataset, Catalog, Map), [accept(html)])
     )
   ).
 
-assert_map(Dataset, Map, In) :-
+assert_map(Dataset, Catalog, Map, In) :-
   load_html(In, Dom, [space(remove)]),
   xpath_chk(Dom, //span(@class=maplist_title,normalize_space), Title),
   xpath_chk(Dom, //span(@class=map_description,normalize_space), Description),
@@ -84,13 +103,23 @@ assert_map(Dataset, Map, In) :-
     xpath(Dom, //ul/li/a(@href), RequestUri),
     sub_string(RequestUri, _, 3, _, wms)
   )),
+  assert_triple(Catalog, dcat:dataset, Map, Dataset),
   assert_instance(Map, def:'Map', Dataset),
-  assert_triple(Map, rdfs:comment, string(Description), Dataset),
+  (   Description \== ''
+  ->  assert_triple(Map, rdfs:comment, string(Description), Dataset)
+  ;   true
+  ),
+  assert_triple(Map, dct:title, string(Title), Dataset),
   assert_label(Map, string(Title), Dataset),
   assert_triple(Map, rdfs:seeAlso, uri(Map), Dataset),
-  assert_triple(Map, sdo:dateCreated, year(Year), Dataset),
+  assert_temporal_year(Dataset, Map, Year),
   (assert_capabilities(Dataset, RequestUri, Service) -> true ; throw(error(RequestUri))),
-  assert_triple(Map, wms:serviceDescription, Service, Dataset).
+  assert_triple(Service, dcat:servesDataset, Map, Dataset).
+
+assert_temporal_year(Dataset, Map, Year) :-
+  assert_interval(date(Year,1,1), date(Year,12,31), Interval, Dataset),
+  assert_instance(Interval, dct:'PeriodOfTime', Dataset),
+  assert_triple(Map, dct:temporal, Interval, Dataset).
 
 year(N) -->
   keyword, ":", whites,
