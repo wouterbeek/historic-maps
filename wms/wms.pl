@@ -2,16 +2,7 @@
 :- module(
   wms,
   [
-    assert_capabilities/3, % +Dataset, +RequestUri, -Service
-    get_map/9              % +Uri,
-                           % +BBox,
-                           % +Crs,
-                           % +ExceptionFormat,
-                           % +Format,
-                           % +Layers,
-                           % +Size,
-                           % +Styles,
-                           % +Version
+    assert_capabilities/3 % +Dataset, +RequestUri, -Service
   ]
 ).
 
@@ -91,80 +82,6 @@ assert_capabilities(Dataset, RequestUri1, Service) :-
 
 
 
-%! get_map(+Uri:atom,
-%!         +BBox:compound,
-%!         +Crs:compound,
-%!         +ExceptionFormat:compound,
-%!         +Format:compound,
-%!         +Layers:list(atom),
-%!         +Size:compound,
-%!         +Styles:list(atom),
-%!         +Version:compound) is det.
-%
-% @tbd transparent(boolean)
-% @tbd bgcolor(atom)
-% @tbd time(?)
-% @tbd elevation(?)
-
-get_map(
-  Uri1,
-  bbox(min(XMin,YMin),max(XMax,YMax)),
-  Crs,
-  ExceptionFormat,
-  Format,
-  Layers,
-  size(Height,Width),
-  Styles,
-  Version
-) :-
-  atomic_list_concat([XMin,YMin,XMax,YMax], ',', BBoxAtom),
-  wms_crs_term(Crs, CrsAtom),
-  (   Version == version(1,1,1)
-  ->  CrsQuery = srs(CrsAtom)
-  ;   Version == version(1,3,0)
-  ->  CrsQuery = crs(CrsAtom)
-  ),
-  atom_phrase(media_type(ExceptionFormat), ExceptionFormatAtom),
-  atom_phrase(media_type(Format), FormatAtom),
-  atomic_list_concat(Layers, ',', LayersAtom),
-  atomic_list_concat(Styles, ',', StylesAtom),
-  wms_version_term(Version, VersionAtom),
-  uri_comps(Uri1, uri(Scheme,Auth,Segments,_,_)),
-  Query = [
-    bbox(BBoxAtom),
-    CrsQuery,
-    exception(ExceptionFormatAtom),
-    format(FormatAtom),
-    height(Height),
-    layers(LayersAtom),
-    request('GetMap'),
-    service('WMS'),
-    styles(StylesAtom),
-    version(VersionAtom),
-    width(Width)
-  ],
-  uri_comps(Uri2, uri(Scheme,Auth,Segments,Query,_)),
-  http_download(
-    Uri2,
-    File1,
-    [
-      accept(media(application/'vnd.ogc.wms_xml',[charset('UTF-8')])),
-      metadata(Metas)
-    ]
-  ),
-  Metas = [Meta|_],
-  dict_get(headers, Meta, Headers),
-  dict_get('content-type', Headers, [Atom]),
-  atom_phrase(media_type(MediaType), Atom),
-  media_type_extension(MediaType, Ext),
-  atomic_list_concat(Layers, -, Base),
-  file_name_extension(Base, Ext, File2),
-  rename_file(File1, File2),
-  writeln(File2),
-  open_file(File2).
-
-
-
 
 
 % ASSERT %
@@ -191,8 +108,8 @@ assert_bboxes(Dataset, Version, LayerDom, Parent, Layer, Pairs) :-
   merge_pairs(SelfPairs, ParentPairs, Pairs),
   maplist(assert_bbox(Dataset, Layer), Pairs).
 
-assert_bbox(Dataset, Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
-  include(ground, [XMax,YMax,XMin,YMin,XRes,YRes], L),
+assert_bbox(Dataset, Layer, CrsTerm-[XMax,YMax,XMin,YMin]) :-
+  include(ground, [XMax,YMax,XMin,YMin], L),
   rdf_hash_iri(bbox, CrsTerm-L, BBox),
   assert_triple(Layer, geo:hasGeometry, BBox, Dataset),
   assert_instance(BBox, tg:'BoundingBox', Dataset),
@@ -216,8 +133,6 @@ assert_bbox(Dataset, Layer, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
   ;   (abs(YMax - YMin) > 50 -> rdf_object_dwim(Shape, Term), writeln(Term) ; true),
       assert_triple(BBox, geo:asWKT, Shape, Dataset)
   ),
-  (var(XRes) -> true ; assert_triple(BBox, tg:resolutionX, string(XRes), Dataset)),
-  (var(YRes) -> true ; assert_triple(BBox, tg:resolutionY, string(YRes), Dataset)),
   assert_crs_term(Dataset, BBox, CrsTerm).
 
 skip_polygon(-75.9923, 3347.04, -75.9923, 25.592, -7261.93, 25.592, -7261.93, 3347.04, -75.9923, 3347.04).
@@ -250,7 +165,7 @@ skip_polygon(92.0387, 61.3577, 92.0387, 28.9605, -398.402, 28.9605, -398.402, 61
 %   - resx and resy (optional) indicate the spatial resolution of the
 %   data comprising the layer in those same units.
 
-wms_bbox(Version, LayerDom, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
+wms_bbox(Version, LayerDom, CrsTerm-[XMax,YMax,XMin,YMin]) :-
   wms_bbox_crs(Version, LayerDom, CrsTerm),
   % X maximum, X minimum, Y maximum, Y minimum
   xpath_chk(
@@ -260,11 +175,7 @@ wms_bbox(Version, LayerDom, CrsTerm-[XMax,YMax,XMin,YMin,XRes,YRes]) :-
                     @minx(number)=XMin,
                     @miny(number)=YMin),
     _
-  ),
-  % X resolution
-  ignore(xpath_chk(LayerDom, 'BoundingBox'(@resx(number)), XRes)),
-  % Y resolution
-  ignore(xpath_chk(LayerDom, 'BoundingBox'(@resy(number)), YRes)).
+  ).
 
 wms_bbox_crs(Version, LayerDom, CrsTerm) :-
   wms_bbox_crs_string(Version, LayerDom, Atom),
@@ -446,28 +357,6 @@ assert_crs_term(Dataset, Iri, uri(Crs)) :-
 
 
 
-%! assert_ex_bbox(+Dataset:dataset,
-%!                +Version:compound,
-%!                +LayerDom:compound,
-%!                +Parent:dict,
-%!                +Layer:iri,
-%!                -ExBBox:list(integer)) is det.
-
-assert_ex_bbox(Dataset, Version, LayerDom, Parent, Layer, [E,N,S,W]) :-
-  'EX_GeographicBoundingBox'(Version, LayerDom, Parent, [E,N,S,W]),%ex_bbox
-  atomic_list_concat([E,N,S,W], '_', ExBBoxLocal),
-  rdf_prefix_iri(bbox, ExBBoxLocal, ExBBox),
-  assert_instance(ExBBox, tg:'BoundingBox', Dataset),
-  format(string(ExBBoxLabel), "East: ~f, North: ~f, South: ~f, West: ~f", [E,N,S,W]),
-  assert_label(ExBBox, string(ExBBoxLabel), Dataset),
-  assert_triple(Layer, tg:boundingBox, ExBBox, Dataset),
-  assert_triple(ExBBox, wms:eastBoundLongitude, E, Dataset),
-  assert_triple(ExBBox, wms:northBoundLongitude, N, Dataset),
-  assert_triple(ExBBox, wms:westBoundLongitude, W, Dataset),
-  assert_triple(ExBBox, wms:southBoundLongitude, S, Dataset).
-
-
-
 %! assert_exceptions(+Dataset:dataset,
 %!                   +ExceptionDom:compound,
 %!                   +Service:iri) is det.
@@ -620,22 +509,6 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
     SelfStyles
   ),
   ord_union(ParentStyles, SelfStyles, Styles),
-  % /EX_GeographicBoudningBox (default inheritance)
-  %
-  % Every named Layer shall have exactly one
-  % <EX_GeographicBoundingBox> element that is either stated
-  % explicitly or inherited from a parent Layer.
-  % EX_GeographicBoundingBox states, via the elements
-  % westBoundLongitude, eastBoundLongitude, southBoundLatitude, and
-  % northBoundLatitude, the minimum bounding rectangle in decimal
-  % degrees of the area covered by the Layer.
-  % EX_GeographicBoundingBox shall be supplied regardless of what CRS
-  % the map server may support, but it may be approximate if the data
-  % are not natively in geographic coordinates.  The purpose of
-  % EX_GeographicBoundingBox is to facilitate geographic searches
-  % without requiring coordinate transformations by the search engine.
-  assert_ex_bbox(Dataset, Version, LayerDom, Parent, Layer, ExBBox),
-  % bounding boxes (inheritance:replace)
   assert_bboxes(Dataset, Version, LayerDom, Parent, Layer, Pairs),
   % CRSes (additive inheritance)
   %
@@ -711,7 +584,6 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   Self = layer{
     bboxes: Pairs,
     crses: CrsTerms,
-    ex_bbox: ExBBox,
     iri: Layer,
     styles: Styles
   },
@@ -1019,33 +891,6 @@ wms_version_term(version(Major,Minor,Patch), Atom) :-
   maplist(atom_number, [Major0,Minor0,Patch0], [Major,Minor,Patch]).
 wms_version_term(version(Major,Minor,Patch), Atom) :-
   format(atom(Atom), "~d.~d.~d", [Major,Minor,Patch]).
-
-
-
-%! 'EX_GeographicBoundingBox'(+Version:compound,
-%!                            +LayerDom:compound,
-%!                            +Parent:dict,
-%!                            -BBox:list(integer)) is det.
-
-'EX_GeographicBoundingBox'(version(1,1,1), LayerDom, _, [E,N,S,W]) :-
-  xpath_chk(
-    LayerDom,
-    //'LatLonBoundingBox'(@maxx(number)=E,
-                          @maxy(number)=N,
-                          @minx(number)=W,
-                          @miny(number)=S),
-    _
-  ), !.
-'EX_GeographicBoundingBox'(version(1,3,0), LayerDom, _, [E,N,S,W]) :-
-  xpath_chk(LayerDom, //'EX_GeographicBoundingBox'(content), ExBBoxDom), !,
-  xpath_chk(ExBBoxDom, //eastBoundLongitude(number), E),
-  xpath_chk(ExBBoxDom, //northBoundLatitude(number), N),
-  xpath_chk(ExBBoxDom, //southBoundLatitude(number), S),
-  xpath_chk(ExBBoxDom, //westBoundLongitude(number), W).
-'EX_GeographicBoundingBox'(_, _, Parent, BBox) :-
-  dict_get(ex_bbox, Parent, BBox), !.
-'EX_GeographicBoundingBox'(_, LayerDom, _, _) :-
-  existence_error('EX_GeographicBoundingBox', LayerDom).
 
 
 
