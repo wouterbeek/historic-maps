@@ -50,6 +50,7 @@ http://metaspatial.net/cgi-bin/ogc-wms.xml
      sdo,
      tg-'https://triplydb.com/Triply/tg/def/',
      tv-'https://triplydb.com/Triply/tv/def/',
+     vcard,
      wms-'https://triplydb.com/Triply/wms/def/'
    ]).
 
@@ -264,7 +265,7 @@ assert_capabilities_stream(Dataset, Service, RequestUri, In) :-
 assert_contact_information(Dataset, ContactInformationDom, Service) :-
   rdf_hash_iri(contact, ContactInformationDom, Contact),
   assert_triple(Service, dcat:contactPoint, Contact, Dataset),
-  assert_instance(Contact, wms:'Contact', Dataset),
+  assert_instance(Contact, vcard:'Kind', Dataset),
   % /ContactAddress
   (   xpath_chk(ContactInformationDom, //'ContactAddress'(content), ContactAddressDom)
   ->  rdf_hash_iri(address, ContactAddressDom, Address),
@@ -447,9 +448,9 @@ assert_layer(Dataset, Version, Dom, Parent, Service) :-
   split_string(LayerTitle, " \n\t", " \n\t", Atoms),
   atomic_list_concat(Atoms, -, LayerLocal),
   rdf_prefix_iri(layer, LayerLocal, Layer),
-  assert_instance(Layer, tg:'Layer', Dataset),
+  assert_instance(Layer, tg:'Map', Dataset),
   assert_label(Layer, string(LayerTitle), Dataset),
-  assert_triple(Service, tg:layer, Layer, Dataset),
+  assert_triple(Service, dcat:servesDataset, Layer, Dataset),
   % /KeywordList (optional, not inherited)
   %
   % A list of keywords or keyword phrases describing each layer should

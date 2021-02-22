@@ -31,15 +31,15 @@
      contact-'https://druid.datalegend.net/IISG/historic-maps/id/contact/',
      dcat,
      dct,
-     def-'https://druid.datalegend.net/IISG/historic-maps/def/',
      graph-'https://druid.datalegend.net/IISG/historic-maps/graphs/',
      instant-'https://druid.datalegend.net/IISG/historic-maps/id/instant/',
      interval-'https://druid.datalegend.net/IISG/historic-maps/id/interval/',
-     layer-'https://druid.datalegend.net/IISG/historic-maps/id/layer/',
+     map-'https://druid.datalegend.net/IISG/historic-maps/id/map/',
      person-'https://druid.datalegend.net/IISG/historic-maps/id/person/',
      rdf,
      service-'https://druid.datalegend.net/IISG/historic-maps/id/service/',
      style-'https://druid.datalegend.net/IISG/historic-maps/id/style/',
+     tg-'https://triplydb.com/Triply/tg/def/',
      time,
      version-'https://druid.datalegend.net/IISG/historic-maps/id/version/'
    ]).
@@ -104,7 +104,7 @@ assert_map(Dataset, Catalog, Map, In) :-
     sub_string(RequestUri, _, 3, _, wms)
   )),
   assert_triple(Catalog, dcat:dataset, Map, Dataset),
-  assert_instance(Map, def:'Map', Dataset),
+  assert_instance(Map, tg:'Map', Dataset),
   (   Description \== ''
   ->  assert_triple(Map, rdfs:comment, string(Description), Dataset)
   ;   true
